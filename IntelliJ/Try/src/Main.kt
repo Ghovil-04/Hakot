@@ -1,0 +1,10 @@
+open class Main {
+
+}
+
+
+
+
+
+
+
