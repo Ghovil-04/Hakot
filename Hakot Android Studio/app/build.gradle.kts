@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.hakot"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -36,9 +36,16 @@ android {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("org.maplibre.gl:android-sdk:11.7.1")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("com.google.android.gms:play-services-maps:19.0.0")
+    implementation("com.google.maps.android:maps-compose:6.3.0")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
