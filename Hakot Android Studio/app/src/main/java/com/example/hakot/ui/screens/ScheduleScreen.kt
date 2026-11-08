@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +74,11 @@ fun ScheduleScreen(
 
     var selectedDate by remember { mutableStateOf(nowLocalDate) }
     var isMonthlyView by remember { mutableStateOf(false) }
+
+    // Update map selected date when schedule date changes
+    LaunchedEffect(selectedDate) {
+        HakotRepository.selectedMapDate = selectedDate
+    }
 
     val activeCurrentSchedule = remember(selectedDate, nowLocalTime) {
         if (selectedDate == nowLocalDate) {

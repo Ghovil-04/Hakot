@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -54,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hakot.ui.theme.DarkBorder
 import com.example.hakot.ui.theme.DarkSurface
-import com.example.hakot.ui.theme.DarkSurfaceVariant
 import com.example.hakot.ui.theme.EcoGreenContainer
 import com.example.hakot.ui.theme.EcoGreenPrimary
 import com.example.hakot.ui.theme.HazardousRed
@@ -68,14 +68,13 @@ fun HakotDrawerContent(
     onToggleAdminMode: (Boolean) -> Unit,
     onCloseDrawer: () -> Unit
 ) {
-    var notificationsEnabled by remember { mutableStateOf(true) }
-    var showHelpDialog by remember { mutableStateOf(false) }
     var showPinDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
+    var notificationsEnabled by remember { mutableStateOf(true) }
 
     ModalDrawerSheet(
         drawerContainerColor = DarkSurface,
-        drawerContentColor = TextOnDarkPrimary,
-        modifier = Modifier.width(320.dp)
+        drawerContentColor = TextOnDarkPrimary
     ) {
         Column(
             modifier = Modifier
@@ -156,18 +155,14 @@ fun HakotDrawerContent(
                 onClick = {}
             )
 
-            // Discrete Admin Mode Item in Settings
+            // System Administration Item in Settings
             DrawerItemRow(
                 icon = Icons.Default.AdminPanelSettings,
                 title = "System Administration",
-                subtitle = if (isAdminMode) "Active (Tap to exit)" else "Restricted (Requires PIN)",
+                subtitle = if (isAdminMode) "Active (Tap to exit)" else "System & District Admin Portal",
                 onClick = {
-                    if (isAdminMode) {
-                        onToggleAdminMode(false)
-                        onCloseDrawer()
-                    } else {
-                        showPinDialog = true
-                    }
+                    onToggleAdminMode(!isAdminMode)
+                    onCloseDrawer()
                 }
             )
 
@@ -300,42 +295,47 @@ fun DrawerItemRow(
     trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit = {}
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(vertical = 10.dp, horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+    Surface(
+        onClick = onClick,
+        color = Color.Transparent,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp, horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = TextOnDarkSecondary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Column {
-                Text(
-                    text = title,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextOnDarkPrimary
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = TextOnDarkSecondary,
+                    modifier = Modifier.size(20.dp)
                 )
-                subtitle?.let {
+                Spacer(modifier = Modifier.width(14.dp))
+                Column {
                     Text(
-                        text = it,
-                        fontSize = 11.sp,
-                        color = TextOnDarkSecondary
+                        text = title,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextOnDarkPrimary
                     )
+                    subtitle?.let {
+                        Text(
+                            text = it,
+                            fontSize = 11.sp,
+                            color = TextOnDarkSecondary
+                        )
+                    }
                 }
             }
+            trailing?.invoke()
         }
-        trailing?.invoke()
     }
 }

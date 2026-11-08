@@ -1,6 +1,11 @@
 package com.example.hakot.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,7 +105,7 @@ fun HomeScreen(
     var isSheetExpanded by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var selectedReportType by remember { mutableStateOf(ReportType.MISSED_COLLECTION) }
-    var selectedBarangay by remember { mutableStateOf("All Barangays") }
+    var isMapInteracting by remember { mutableStateOf(false) }
 
     // Animated sheet height based on drag state
     val sheetMaxHeight = 560.dp
@@ -112,23 +117,30 @@ fun HomeScreen(
 
     val scrollState = rememberScrollState()
 
-    val barangayOptions = listOf("All Barangays", "Poblacion", "Sabang", "Tambo", "Marawoy", "Balintawak")
-
     Box(modifier = modifier.fillMaxSize()) {
-        // Fullscreen Vector/OSM Map Background
+        // Fullscreen Vector/OSM Map Background with interaction listener
         DarkMapView(
             searchQuery = searchQuery,
-            onReportClick = { showReportDialog = true }
+            onReportClick = { showReportDialog = true },
+            onMapInteractionStateChange = { interacting ->
+                isMapInteracting = interacting
+            }
         )
 
-        // Floating Top Search Bar Island over the Map
-        TopSearchBar(
-            query = searchQuery,
-            onQueryChange = onQueryChange,
-            onMenuClick = onMenuClick,
-            isAdminMode = isAdminMode,
+        // Floating Top Search Bar Island over the Map - Hides smoothly during map interaction
+        AnimatedVisibility(
+            visible = !isMapInteracting,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
             modifier = Modifier.align(Alignment.TopCenter)
-        )
+        ) {
+            TopSearchBar(
+                query = searchQuery,
+                onQueryChange = onQueryChange,
+                onMenuClick = onMenuClick,
+                isAdminMode = isAdminMode
+            )
+        }
 
         // Minimalist Slim Floating Status & Report Pill right above Bottom Sheet
         Surface(
@@ -159,27 +171,6 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold,
                     color = TextOnDarkPrimary
                 )
-                Box(
-                    modifier = Modifier
-                        .size(3.dp)
-                        .clip(CircleShape)
-                        .background(TextOnDarkSecondary)
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.ReportProblem,
-                        contentDescription = "Report",
-                        tint = HazardousRed,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = "Report",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = HazardousRed
-                    )
-                }
             }
         }
 
@@ -264,7 +255,7 @@ fun HomeScreen(
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Today • 8:00 AM - Barangays Route 1",
+                                text = "📍 ${HakotRepository.detectedLocationName} • J.P. Laurel St Route",
                                 fontSize = 12.sp,
                                 color = TextOnDarkSecondary
                             )
@@ -312,42 +303,6 @@ fun HomeScreen(
                             .padding(top = 8.dp)
                             .verticalScroll(scrollState)
                     ) {
-                        // Barangay Quick Location Filter Row
-                        Text(
-                            text = "Filter by Location / Barangay:",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextOnDarkPrimary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(vertical = 4.dp)
-                        ) {
-                            items(barangayOptions) { bgy ->
-                                FilterChip(
-                                    selected = selectedBarangay == bgy,
-                                    onClick = { selectedBarangay = bgy },
-                                    label = { Text(bgy, fontSize = 11.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = EcoGreenPrimary,
-                                        selectedLabelColor = Color.Black,
-                                        containerColor = DarkSurfaceCard,
-                                        labelColor = TextOnDarkSecondary
-                                    ),
-                                    border = FilterChipDefaults.filterChipBorder(
-                                        enabled = true,
-                                        selected = selectedBarangay == bgy,
-                                        borderColor = DarkBorder,
-                                        selectedBorderColor = EcoGreenPrimary
-                                    ),
-                                    modifier = Modifier.height(30.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
                         // Official LGU Announcements Section
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -462,7 +417,7 @@ fun HomeScreen(
                                             color = TextOnDarkPrimary
                                         )
                                         Text(
-                                            text = "Missed schedule, waste pile-up, illegal dumping",
+                                            text = "No collection route, missed schedule, pile-up",
                                             fontSize = 11.sp,
                                             color = TextOnDarkSecondary
                                         )
@@ -484,19 +439,19 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             QuickReportChip(
+                                label = "No Route in Area",
+                                icon = Icons.Default.ReportProblem,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                selectedReportType = ReportType.NO_ROUTE_IN_AREA
+                                showReportDialog = true
+                            }
+                            QuickReportChip(
                                 label = "Missed Hakot",
                                 icon = Icons.Default.AddAlert,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 selectedReportType = ReportType.MISSED_COLLECTION
-                                showReportDialog = true
-                            }
-                            QuickReportChip(
-                                label = "Waste Pile-Up",
-                                icon = Icons.Default.DeleteSweep,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                selectedReportType = ReportType.WASTE_PILE_UP
                                 showReportDialog = true
                             }
                         }
@@ -554,7 +509,7 @@ fun HomeScreen(
                                         color = TextOnDarkPrimary
                                     )
                                     Text(
-                                        text = "(046) 888-HAKOT • 24/7 Anonymous Dispatch",
+                                        text = "(043) 723-HAKOT • 24/7 Anonymous Dispatch",
                                         fontSize = 11.sp,
                                         color = TextOnDarkSecondary
                                     )
@@ -698,7 +653,7 @@ fun AnonymousReportModal(
     onSubmit: (ReportType, String, String) -> Unit
 ) {
     var selectedType by remember { mutableStateOf(initialType) }
-    var locationInput by remember { mutableStateOf("Mulingbayan Street corner Barangay 7") }
+    var locationInput by remember { mutableStateOf("J.P. Laurel Street, Nasugbu") }
     var descriptionInput by remember { mutableStateOf("") }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -795,7 +750,7 @@ fun AnonymousReportModal(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Location Input Field
-            Text("Location / Landmark:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextOnDarkPrimary)
+            Text("Location / Street / Barangay:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextOnDarkPrimary)
             OutlinedTextField(
                 value = locationInput,
                 onValueChange = { locationInput = it },
@@ -818,7 +773,7 @@ fun AnonymousReportModal(
             OutlinedTextField(
                 value = descriptionInput,
                 onValueChange = { descriptionInput = it },
-                placeholder = { Text("e.g. 3 trash bags uncollected beside street pole", color = TextOnDarkMuted, fontSize = 12.sp) },
+                placeholder = { Text("e.g. No collection route assigned to our street", color = TextOnDarkMuted, fontSize = 12.sp) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = EcoGreenPrimary,
                     unfocusedBorderColor = DarkBorder,

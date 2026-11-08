@@ -10,18 +10,27 @@ enum class WasteCategory(val displayName: String, val colorHex: Long) {
     BULKY_RESIDUAL("Bulky Household & Furniture", 0xFF3B82F6)
 }
 
-enum class ReportType(val title: String, val description: String) {
-    MISSED_COLLECTION("Missed Schedule", "Collection truck did not arrive on scheduled time"),
-    WASTE_PILE_UP("Waste Pile-Up", "Overflowing waste accumulated on street/corner"),
-    ILLEGAL_DUMPING("Illegal Dumping", "Unauthorized garbage disposal spotted"),
-    DAMAGED_BIN("Damaged Public Bin", "Public trash bin broken or destroyed"),
-    OTHER("Other Concern", "General sanitation issue")
+enum class ReportType(val title: String, val description: String, val targetOffice: String) {
+    UNCOLLECTED_GARBAGE("Uncollected Garbage", "Accumulated trash awaiting regular truck pass", "Waste Collection Office"),
+    NO_ROUTE_IN_AREA("No Collection Route in My Area", "Inform admin that your street/area has no assigned waste collection route", "Collection Operations"),
+    MISSED_COLLECTION("Missed Collection Schedule", "Collection truck did not arrive during scheduled collection window", "Collection Operations"),
+    ILLEGAL_DUMPING("Illegal Dumping Spot", "Unauthorized garbage disposal spotted on street", "Environmental Enforcement Office"),
+    OVERFLOWING_BINS("Overflowing Garbage Bins", "Public bins overflowing or damaged", "Sanitation Office"),
+    IMPROPER_DISPOSAL("Improper Waste Disposal", "Non-segregated or hazardous waste disposed improperly", "Sanitation Office"),
+    BLOCKED_DRAINAGE("Blocked Drainage Caused by Waste", "Waste blocking street drainage or waterway", "Municipal Maintenance Office"),
+    OTHER("Other Collection Concern", "General sanitation or collection issue", "Municipal Waste Office")
 }
 
 enum class ReportStatus(val label: String) {
-    SUBMITTED("Report Received"),
-    IN_PROGRESS("Dispatching Truck"),
-    RESOLVED("Cleaned & Cleared")
+    SUBMITTED("Submitted"),
+    RECEIVED("Received"),
+    UNDER_REVIEW("Under Review"),
+    ASSIGNED("Assigned"),
+    IN_PROGRESS("In Progress"),
+    AWAITING_INFO("Awaiting Additional Info"),
+    RESOLVED("Resolved"),
+    REJECTED("Rejected"),
+    CLOSED("Closed")
 }
 
 enum class TruckStatus(val label: String) {
@@ -32,10 +41,75 @@ enum class TruckStatus(val label: String) {
 }
 
 enum class UserRole(val label: String) {
-    RESIDENT("Resident (Anonymous)"),
+    DISTRICT_ADMIN("District Administrator"),
     DRIVER("Truck Operator / Driver"),
-    ADMIN("Sanitation Admin")
+    RESIDENT("Resident (Anonymous)")
 }
+
+enum class AdminStatus(val label: String) {
+    ACTIVE("Active"),
+    PENDING_INVITATION("Pending Invitation"),
+    SUSPENDED("Suspended"),
+    REVOKED("Revoked")
+}
+
+enum class OrganizationType(val label: String) {
+    MUNICIPALITY("Municipality / LGU"),
+    DISTRICT("District / City Zone"),
+    BARANGAY("Barangay LGU"),
+    PRIVATE_COMPANY("Private Waste Collection Company")
+}
+
+data class OrganizationConfig(
+    val id: String,
+    val name: String,
+    val type: OrganizationType,
+    val province: String,
+    val region: String,
+    val assignedMunicipality: String,
+    val coveredBarangays: List<String>,
+    val adminContactEmail: String,
+    val adminContactPhone: String
+)
+
+data class AdminUserProfile(
+    val userId: String,
+    val fullName: String,
+    val email: String,
+    val municipalityOrgId: String,
+    val municipalityName: String,
+    val districtId: String,
+    val districtName: String,
+    val role: UserRole = UserRole.DISTRICT_ADMIN,
+    var status: AdminStatus = AdminStatus.ACTIVE,
+    val registrationDate: String,
+    val lastActivity: String = "Just now"
+)
+
+data class DistrictAdminInvitation(
+    val invitationId: String,
+    val codeHash: String,
+    val rawCodeDisplay: String,
+    val intendedEmail: String,
+    val intendedAdminName: String,
+    val municipalityOrgId: String,
+    val assignedDistrictId: String,
+    val assignedDistrictName: String,
+    val assignedRole: UserRole = UserRole.DISTRICT_ADMIN,
+    val createdByAuthorityOffice: String = "Nasugbu Municipal Sanitation Office",
+    val createdAtMillis: Long,
+    val expiresAtMillis: Long,
+    var redeemedAtMillis: Long? = null,
+    var status: AdminStatus = AdminStatus.PENDING_INVITATION
+)
+
+data class AuditLogEntry(
+    val id: String,
+    val actingUserEmail: String,
+    val action: String,
+    val targetRecord: String,
+    val timestampMillis: Long
+)
 
 data class Announcement(
     val id: String,
@@ -44,6 +118,131 @@ data class Announcement(
     val timestampMillis: Long,
     val category: String = "General",
     val isPinned: Boolean = false
+)
+
+data class Dumpsite(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    var status: Boolean = true,
+    val id: String = "ds_1",
+    val type: String = "Materials Recovery Facility",
+    val address: String = "J.P. Laurel St, Nasugbu, Batangas",
+    val capacityPercent: Int = 65,
+    val operatingHours: String = "6:00 AM - 6:00 PM",
+    val acceptedWasteTypes: String = "General Household, Recyclables & Compost",
+    val isOpenNow: Boolean = true,
+    val contactNumber: String = "(043) 723-HAKOT"
+) {
+    init {
+        require(name.isNotBlank()) { "Dumpsite name must not be blank" }
+        require(latitude in -90.0..90.0) { "Invalid latitude: $latitude" }
+        require(longitude in -180.0..180.0) { "Invalid longitude: $longitude" }
+    }
+}
+
+data class Dumptrack(
+    val plateNum: String,
+    var isCollecting: Boolean = true,
+    var route: String = "J.P. Laurel Street Route",
+    var Destination: String = "Nasugbu MRF Facility",
+    var isOnline: Boolean = true,
+    var driverName: String = "Mario Santos",
+    var speed: Int = 22,
+    var latitude: Double = 14.0725,
+    var longitude: Double = 120.6335,
+    val id: String = "tr_1",
+    val truckCode: String = "Hakot Truck #1",
+    val assignedBarangays: String = "Spans Barangays Poblacion 1, 2 & 3",
+    val status: TruckStatus = TruckStatus.ACTIVE_ON_ROUTE,
+    val lastGpsUpdate: String = "Live - 1 min ago"
+) {
+    val plateNumber: String get() = plateNum
+    val assignedRoute: String get() = route
+    val destinationDumpsite: String get() = Destination
+    val speedKmH: Int get() = speed
+
+    constructor(
+        id: String = "tr_1",
+        truckCode: String = "Hakot Truck #1",
+        plateNumber: String,
+        driverName: String,
+        assignedRoute: String,
+        assignedBarangays: String = "Spans Barangays Poblacion 1, 2 & 3",
+        destinationDumpsite: String = "Nasugbu MRF Facility",
+        latitude: Double,
+        longitude: Double,
+        status: TruckStatus = TruckStatus.ACTIVE_ON_ROUTE,
+        speedKmH: Int = 22,
+        lastGpsUpdate: String = "Live - 1 min ago",
+        isCollecting: Boolean = true,
+        isOnline: Boolean = true
+    ) : this(
+        plateNum = plateNumber,
+        isCollecting = isCollecting,
+        route = assignedRoute,
+        Destination = destinationDumpsite,
+        isOnline = isOnline,
+        driverName = driverName,
+        speed = speedKmH,
+        latitude = latitude,
+        longitude = longitude,
+        id = id,
+        truckCode = truckCode,
+        assignedBarangays = assignedBarangays,
+        status = status,
+        lastGpsUpdate = lastGpsUpdate
+    )
+
+    init {
+        require(plateNum.isNotBlank()) { "Plate number must not be blank" }
+    }
+
+    fun collecting(routeName: String, streets: List<String>, destination: String) {
+        this.isCollecting = true
+        this.route = if (streets.isNotEmpty()) "$routeName (${streets.joinToString(", ")})" else routeName
+        this.Destination = destination
+    }
+
+    fun status(driverName: String, lat: Double, lng: Double, speed: Int, isOnline: Boolean) {
+        this.driverName = driverName
+        this.latitude = lat
+        this.longitude = lng
+        this.speed = speed
+        this.isOnline = isOnline
+    }
+}
+typealias GarbageTruck = Dumptrack
+
+data class Route(
+    var routeName: String,
+    var street: List<String> = listOf("J.P. Laurel St"),
+    val id: String = "rt_1",
+    val barangaysCovered: String = "J.P. Laurel St (Spans Brgy 1, 2 & 3)",
+    val colorHex: Long = 0xFF3B82F6,
+    val waypoints: List<Pair<Float, Float>> = emptyList(),
+    val geoPoints: List<Pair<Double, Double>> = emptyList(),
+    val assignedTruckPlate: String = "ABK-8891",
+    val scheduledTimeWindow: String = "8:00 AM - 11:30 AM",
+    val scheduledDate: String = "Today",
+    val destinationDumpsite: String = "Nasugbu MRF Facility"
+) {
+    fun setRoute(barangay: String, streets: List<String>) {
+        if (barangay.isNotBlank()) {
+            this.routeName = "$routeName - $barangay"
+        }
+        this.street = streets
+    }
+}
+typealias CollectionRoute = Route
+
+data class Schedules(
+    val dumptrack: Dumptrack,
+    val dumpsite: Dumpsite,
+    val route: Route,
+    val eta: String = "8:00 AM",
+    val collectionDate: LocalDate = LocalDate.now(),
+    val scheduledTime: LocalTime = LocalTime.of(8, 0)
 )
 
 data class ScheduleItem(
@@ -58,50 +257,28 @@ data class ScheduleItem(
     val status: String
 )
 
-data class GarbageTruck(
+data class ReportMessage(
     val id: String,
-    val truckCode: String,
-    val plateNumber: String,
-    val driverName: String,
-    val assignedRoute: String,
-    val assignedBarangays: String = "Barangay Poblacion, Sabang",
-    val destinationDumpsite: String = "Lipa City MRF Facility",
-    var latitude: Double,
-    var longitude: Double,
-    val status: TruckStatus,
-    val speedKmH: Int,
-    val lastGpsUpdate: String = "Live - 1 min ago"
-)
-
-data class Dumpsite(
-    val id: String,
-    val name: String,
-    val type: String,
-    val address: String,
-    val latitude: Double,
-    val longitude: Double,
-    val capacityPercent: Int,
-    val operatingHours: String = "6:00 AM - 6:00 PM",
-    val acceptedWasteTypes: String = "General Household, Recyclables & Compost",
-    val isOpenNow: Boolean = true,
-    val contactNumber: String = "(046) 888-HAKOT"
-)
-
-data class CollectionRoute(
-    val id: String,
-    val routeName: String,
-    val barangaysCovered: String,
-    val colorHex: Long,
-    val waypoints: List<Pair<Float, Float>>
+    val reportId: String,
+    val senderType: String,
+    val senderName: String,
+    val text: String,
+    val timestampMillis: Long,
+    val isRead: Boolean = false
 )
 
 data class AnonymousReport(
     val id: String,
+    val referenceNumber: String = "#HK-${(System.currentTimeMillis() % 10000)}",
+    val accessToken: String = "AUTH-${(System.currentTimeMillis() % 10000)}",
     val reportType: ReportType,
     val locationName: String,
     val latitude: Double,
     val longitude: Double,
     val description: String,
     val timestampMillis: Long,
-    val status: ReportStatus = ReportStatus.SUBMITTED
+    var status: ReportStatus = ReportStatus.SUBMITTED,
+    val assignedOffice: String = reportType.targetOffice,
+    var assignedHandlerName: String = "Unassigned Handler",
+    var resolutionDetails: String = ""
 )
