@@ -68,7 +68,9 @@ fun StreetMap(
                     setTileSource(TileSourceFactory.MAPNIK)
                     setUseDataConnection(true)
                     setMultiTouchControls(true)
-                    isTilesScaledToDpi = true
+                    isTilesScaledToDpi = false
+                    minZoomLevel = 4.0
+                    maxZoomLevel = 18.5
                     controller.setZoom(initialZoom)
                     controller.setCenter(lipaCityCenter)
 
