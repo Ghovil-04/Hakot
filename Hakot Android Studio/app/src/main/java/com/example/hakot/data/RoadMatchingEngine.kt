@@ -167,7 +167,7 @@ object RoadMatchingEngine {
         return Pair(minDistance, bestPosition)
     }
 
-    // Phase 2.13: Return ALL actual geometric intersections between two LineStrings with complete index and progress info
+    // Phase 2.13.2: Return ALL actual geometric intersections between two LineStrings with complete index and progress info
     fun findAllLineStringIntersections(
         line1: List<Pair<Double, Double>>,
         line2: List<Pair<Double, Double>>
@@ -350,7 +350,7 @@ object RoadMatchingEngine {
             sampledSketch.add(sketchPoints.last())
         }
 
-        // Phase 2.13: Sequence-Aware Beam Search with strict transition enforcement (Reject disconnected transitions immediately)
+        // Phase 2.13.2: Sequence-Aware Beam Search with strict transition enforcement (Fix 1: Unmatched sample handling)
         data class BeamNode(
             val cand: StreetSegment,
             val progress: Double,
@@ -388,7 +388,7 @@ object RoadMatchingEngine {
                         if (prev.cand.segmentId != cand.segmentId) {
                             val intersections = findAllLineStringIntersections(prev.cand.geoPoints, cand.geoPoints)
                             if (intersections.isEmpty()) {
-                                // Phase 2.13 Requirement 1: REJECT disconnected transition immediately
+                                // Fix 1: REJECT disconnected transition immediately
                                 continue
                             } else {
                                 val bestInter = intersections.minByOrNull { abs(it.progress1 - prev.progress) + abs(it.progress2 - prog) }
@@ -450,12 +450,13 @@ object RoadMatchingEngine {
             val entryT = tList.first()
             val exitT = tList.last()
             val metrics = computeLineMetrics(cand.geoPoints)
-            val entryCoord = interpolatePointAlongLine(cand.geoPoints, metrics, entryT)
-            val exitCoord = interpolatePointAlongLine(cand.geoPoints, metrics, exitT)
+            var entryCoord = interpolatePointAlongLine(cand.geoPoints, metrics, entryT)
+            var exitCoord = interpolatePointAlongLine(cand.geoPoints, metrics, exitT)
 
             val direction = if (entryT <= exitT) "FORWARD" else "REVERSE"
 
-            // Exact Geometry Trimming using segment indices and local parameters
+            // Fix 2: Precise Intersection Snapping for transition boundaries
+            // Exact Geometry Trimming preserving original vertex index and local segment position
             val trimmedGeoPoints = mutableListOf<Pair<Double, Double>>()
             trimmedGeoPoints.add(entryCoord)
 
@@ -491,7 +492,7 @@ object RoadMatchingEngine {
             )
         }
 
-        // Phase 2.13: Correct transition-position validation using metric distance <= 75.0m from intersection coordinate
+        // Phase 2.13.2: Correct transition-position validation using exact intersection matching (Tolerance: 75.0m from intersection coordinate)
         if (finalMatchedList.size >= 2) {
             for (m in 0 until finalMatchedList.size - 1) {
                 val seg1 = finalMatchedList[m]
@@ -501,15 +502,20 @@ object RoadMatchingEngine {
                 val line2 = candidateSegments.find { it.segmentId == seg2.segmentId }?.geoPoints ?: seg2.geoPoints
 
                 val intersections = findAllLineStringIntersections(line1, line2)
-                val validTransition = intersections.any { inter ->
+                val matchingIntersection = intersections.firstOrNull { inter ->
                     val distExit1 = distanceInMeters(seg1.exitCoordinate.first, seg1.exitCoordinate.second, inter.intersectionCoordinate.first, inter.intersectionCoordinate.second)
                     val distEntry2 = distanceInMeters(seg2.entryCoordinate.first, seg2.entryCoordinate.second, inter.intersectionCoordinate.first, inter.intersectionCoordinate.second)
                     distExit1 <= 75.0 && distEntry2 <= 75.0
                 }
 
-                if (intersections.isEmpty() || !validTransition) {
+                if (intersections.isEmpty() || matchingIntersection == null) {
                     hasDisconnectedGaps = true
                     warnings.add("Transition validation failed between '${seg1.streetName}' and '${seg2.streetName}' (traversal exit/entry positions do not meet at a proven intersection within 75m).")
+                } else {
+                    // Fix 2: Snap occurrence exit and entry coordinates to the exact proven intersection coordinate
+                    val interCoord = matchingIntersection.intersectionCoordinate
+                    finalMatchedList[m] = seg1.copy(exitCoordinate = interCoord)
+                    finalMatchedList[m + 1] = seg2.copy(entryCoordinate = interCoord)
                 }
             }
         }
