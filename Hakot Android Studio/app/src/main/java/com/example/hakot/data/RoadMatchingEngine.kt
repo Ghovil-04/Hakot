@@ -40,11 +40,6 @@ data class DetailedIntersection(
     val progress2: Double
 )
 
-data class IntersectionResult(
-    val hasIntersection: Boolean,
-    val intersectionCoordinate: Pair<Double, Double>?
-)
-
 data class RawMatchHit(
     val cand: StreetSegment,
     val progress: Double
@@ -350,7 +345,7 @@ object RoadMatchingEngine {
             sampledSketch.add(sketchPoints.last())
         }
 
-        // Phase 2.13.2: Sequence-Aware Beam Search with strict transition enforcement (Fix 1: Unmatched sample handling)
+        // Phase 2.13.2: Sequence-Aware Beam Search (Fix 1: Unmatched sample handling)
         data class BeamNode(
             val cand: StreetSegment,
             val progress: Double,
@@ -369,7 +364,8 @@ object RoadMatchingEngine {
             if (sortedCandidates.isEmpty()) {
                 hasUnmatchedPortions = true
                 warnings.add("Off-road sketch point near ${sketchPt.latitude.toString().take(7)}, ${sketchPt.longitude.toString().take(7)} exceeds snap threshold.")
-                continue
+                activeBeam.clear()
+                break
             }
 
             val newBeam = mutableListOf<BeamNode>()
@@ -388,7 +384,6 @@ object RoadMatchingEngine {
                         if (prev.cand.segmentId != cand.segmentId) {
                             val intersections = findAllLineStringIntersections(prev.cand.geoPoints, cand.geoPoints)
                             if (intersections.isEmpty()) {
-                                // Fix 1: REJECT disconnected transition immediately
                                 continue
                             } else {
                                 val bestInter = intersections.minByOrNull { abs(it.progress1 - prev.progress) + abs(it.progress2 - prog) }
@@ -408,6 +403,9 @@ object RoadMatchingEngine {
 
             if (newBeam.isNotEmpty()) {
                 activeBeam = newBeam.sortedBy { it.cost }.take(beamWidth).toMutableList()
+            } else {
+                activeBeam.clear()
+                break
             }
         }
 
@@ -450,31 +448,48 @@ object RoadMatchingEngine {
             val entryT = tList.first()
             val exitT = tList.last()
             val metrics = computeLineMetrics(cand.geoPoints)
-            var entryCoord = interpolatePointAlongLine(cand.geoPoints, metrics, entryT)
-            var exitCoord = interpolatePointAlongLine(cand.geoPoints, metrics, exitT)
+            val entryCoord = interpolatePointAlongLine(cand.geoPoints, metrics, entryT)
+            val exitCoord = interpolatePointAlongLine(cand.geoPoints, metrics, exitT)
 
             val direction = if (entryT <= exitT) "FORWARD" else "REVERSE"
 
-            // Fix 2: Precise Intersection Snapping for transition boundaries
-            // Exact Geometry Trimming preserving original vertex index and local segment position
+            // Fix 3: Correct Reverse Traversal Geometry Trimming
             val trimmedGeoPoints = mutableListOf<Pair<Double, Double>>()
-            trimmedGeoPoints.add(entryCoord)
-
             val minT = min(entryT, exitT)
             val maxT = max(entryT, exitT)
 
-            for (i in cand.geoPoints.indices) {
-                val ptFrac = if (metrics.totalLengthMeters > 0.0) metrics.cumulativeDistances[i] / metrics.totalLengthMeters else 0.0
-                if (ptFrac > minT && ptFrac < maxT) {
-                    val ptCoord = cand.geoPoints[i]
-                    if (trimmedGeoPoints.last() != ptCoord) {
-                        trimmedGeoPoints.add(ptCoord)
+            if (direction == "FORWARD") {
+                for (i in cand.geoPoints.indices) {
+                    val ptFrac = if (metrics.totalLengthMeters > 0.0) metrics.cumulativeDistances[i] / metrics.totalLengthMeters else 0.0
+                    if (ptFrac >= minT && ptFrac <= maxT) {
+                        val ptCoord = cand.geoPoints[i]
+                        if (trimmedGeoPoints.isEmpty() || trimmedGeoPoints.last() != ptCoord) {
+                            trimmedGeoPoints.add(ptCoord)
+                        }
+                    }
+                }
+            } else {
+                for (i in cand.geoPoints.indices.reversed()) {
+                    val ptFrac = if (metrics.totalLengthMeters > 0.0) metrics.cumulativeDistances[i] / metrics.totalLengthMeters else 0.0
+                    if (ptFrac >= minT && ptFrac <= maxT) {
+                        val ptCoord = cand.geoPoints[i]
+                        if (trimmedGeoPoints.isEmpty() || trimmedGeoPoints.last() != ptCoord) {
+                            trimmedGeoPoints.add(ptCoord)
+                        }
                     }
                 }
             }
 
-            if (trimmedGeoPoints.last() != exitCoord) {
+            if (trimmedGeoPoints.isEmpty()) {
+                trimmedGeoPoints.add(entryCoord)
                 trimmedGeoPoints.add(exitCoord)
+            } else {
+                if (trimmedGeoPoints.first() != entryCoord) {
+                    trimmedGeoPoints.add(0, entryCoord)
+                }
+                if (trimmedGeoPoints.last() != exitCoord) {
+                    trimmedGeoPoints.add(exitCoord)
+                }
             }
 
             finalMatchedList.add(
@@ -487,12 +502,12 @@ object RoadMatchingEngine {
                     exitProgress = exitT,
                     entryCoordinate = entryCoord,
                     exitCoordinate = exitCoord,
-                    geoPoints = if (direction == "FORWARD") trimmedGeoPoints else trimmedGeoPoints.reversed()
+                    geoPoints = trimmedGeoPoints
                 )
             )
         }
 
-        // Phase 2.13.2: Correct transition-position validation using exact intersection matching (Tolerance: 75.0m from intersection coordinate)
+        // Phase 2.13.2: Exact Intersection-Based Transitions (Fix 2)
         if (finalMatchedList.size >= 2) {
             for (m in 0 until finalMatchedList.size - 1) {
                 val seg1 = finalMatchedList[m]
@@ -512,7 +527,6 @@ object RoadMatchingEngine {
                     hasDisconnectedGaps = true
                     warnings.add("Transition validation failed between '${seg1.streetName}' and '${seg2.streetName}' (traversal exit/entry positions do not meet at a proven intersection within 75m).")
                 } else {
-                    // Fix 2: Snap occurrence exit and entry coordinates to the exact proven intersection coordinate
                     val interCoord = matchingIntersection.intersectionCoordinate
                     finalMatchedList[m] = seg1.copy(exitCoordinate = interCoord)
                     finalMatchedList[m + 1] = seg2.copy(entryCoordinate = interCoord)
