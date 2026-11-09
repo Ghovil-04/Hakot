@@ -9,6 +9,7 @@ import com.example.hakot.model.AdminUserProfile
 import com.example.hakot.model.Announcement
 import com.example.hakot.model.AnonymousReport
 import com.example.hakot.model.AuditLogEntry
+import com.example.hakot.model.CollectionProgressRecord
 import com.example.hakot.model.CollectionRoute
 import com.example.hakot.model.DistrictAdminInvitation
 import com.example.hakot.model.Dumpsite
@@ -18,18 +19,34 @@ import com.example.hakot.model.OrganizationType
 import com.example.hakot.model.ReportMessage
 import com.example.hakot.model.ReportStatus
 import com.example.hakot.model.ReportType
+import com.example.hakot.model.RouteSegmentJunction
 import com.example.hakot.model.ScheduleItem
-import com.example.hakot.model.TruckStatus
+import com.example.hakot.model.StreetSegment
+import com.example.hakot.model.TruckGpsTrailPoint
 import com.example.hakot.model.UserRole
-import com.example.hakot.model.WasteCategory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.security.SecureRandom
 import java.time.LocalDate
-import java.time.LocalTime
 
 object HakotRepository {
     val today: LocalDate get() = LocalDate.now()
 
     var selectedMapDate: LocalDate by mutableStateOf(LocalDate.now())
+
+    // NASUGBU GIS DATA FROM SUPABASE
+    var barangayGeoJson: String? by mutableStateOf(null)
+    var roadGeoJson: String? by mutableStateOf(null)
+
+    var isGisLoading: Boolean by mutableStateOf(false)
+    var gisLoadError: String by mutableStateOf("")
+
+    var gisBarangayCount: Int by mutableStateOf(0)
+    var gisRoadCount: Int by mutableStateOf(0)
+
+    var isGisLoaded: Boolean by mutableStateOf(false)
 
     var currentAdminRole: UserRole by mutableStateOf(UserRole.DISTRICT_ADMIN)
 
@@ -68,357 +85,88 @@ object HakotRepository {
     var detectedCity: String = "Nasugbu"
     var detectedProvince: String = "Batangas"
 
-    val adminProfiles = mutableStateListOf(
-        AdminUserProfile(
-            userId = "usr_dist_101",
-            fullName = "Maria Clara Lopez",
-            email = "m.lopez@nasugbu.gov.ph",
-            municipalityOrgId = "org_nasugbu_lgu",
-            municipalityName = "Nasugbu, Batangas",
-            districtId = "dist_1",
-            districtName = "District 1 - Poblacion & Coastal Corridor",
-            role = UserRole.DISTRICT_ADMIN,
-            status = AdminStatus.ACTIVE,
-            registrationDate = "Feb 14, 2026",
-            lastActivity = "Active Now"
-        ),
-        AdminUserProfile(
-            userId = "usr_dist_102",
-            fullName = "Capt. Juanito Cruz",
-            email = "j.cruz@nasugbu.gov.ph",
-            municipalityOrgId = "org_nasugbu_lgu",
-            municipalityName = "Nasugbu, Batangas",
-            districtId = "dist_2",
-            districtName = "District 2 - Bypass & Highway Corridor",
-            role = UserRole.DISTRICT_ADMIN,
-            status = AdminStatus.ACTIVE,
-            registrationDate = "Mar 01, 2026",
-            lastActivity = "Yesterday"
-        )
-    )
+    // Database tables - Starting clean for real administration entries
+    val streetSegments = mutableStateListOf<StreetSegment>()
+    val routeJunctions = mutableStateListOf<RouteSegmentJunction>()
+    val collectionProgressRecords = mutableStateListOf<CollectionProgressRecord>()
+    val truckGpsTrails = mutableStateListOf<TruckGpsTrailPoint>()
 
-    val invitations = mutableStateListOf(
-        DistrictAdminInvitation(
-            invitationId = "inv_801",
-            codeHash = "HAKOT-D7K9-M2QP",
-            rawCodeDisplay = "HAKOT-D7K9-M2QP-X8RN",
-            intendedEmail = "sanitation.head@nasugbu.gov.ph",
-            intendedAdminName = "Engr. Marco Valenzuela",
-            municipalityOrgId = "org_nasugbu_lgu",
-            assignedDistrictId = "dist_3",
-            assignedDistrictName = "District 3 - Outer Municipal Zone",
-            assignedRole = UserRole.DISTRICT_ADMIN,
-            createdByAuthorityOffice = "Nasugbu Sanitation Authority",
-            createdAtMillis = System.currentTimeMillis() - 86400000 * 2,
-            expiresAtMillis = System.currentTimeMillis() + 86400000 * 5,
-            status = AdminStatus.PENDING_INVITATION
-        )
-    )
-
-    val auditLogs = mutableStateListOf(
-        AuditLogEntry(
-            id = "aud_101",
-            actingUserEmail = "m.lopez@nasugbu.gov.ph",
-            action = "Updated District 1 Waste Collection Schedule",
-            targetRecord = "C. Alvarez to F. Alix Street Corridor",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 2
-        ),
-        AuditLogEntry(
-            id = "aud_102",
-            actingUserEmail = "m.lopez@nasugbu.gov.ph",
-            action = "Redeemed District Invitation Code",
-            targetRecord = "District 1 Administrator Account Activated",
-            timestampMillis = System.currentTimeMillis() - 86400000 * 10
-        )
-    )
-
-    val reportMessages = mutableStateListOf(
-        ReportMessage(
-            id = "msg_1",
-            reportId = "rep_100",
-            senderType = "HANDLER",
-            senderName = "Nasugbu Waste Collection Office",
-            text = "Thank you for reporting this unassigned section. Our team is inspecting P. Burgos Street Extension.",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 1
-        ),
-        ReportMessage(
-            id = "msg_2",
-            reportId = "rep_100",
-            senderType = "RESIDENT",
-            senderName = "Anonymous Resident",
-            text = "Thank you! We have 8 households along this corner needing collection.",
-            timestampMillis = System.currentTimeMillis() - 1800000
-        )
-    )
-
-    val announcements = mutableStateListOf(
-        Announcement(
-            id = "ann_1",
-            title = "📢 LGU Holiday Waste Collection Notice",
-            message = "All regular street routes in Nasugbu (C. Alvarez St, J.P. Laurel St & F. Alix St) will proceed as scheduled today.",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 3,
-            category = "Schedule Update",
-            isPinned = true
-        ),
-        Announcement(
-            id = "ann_2",
-            title = "🚛 Extra Truck Dispatched to Roxas Street",
-            message = "Hakot Truck #2 dispatched for afternoon collection along Roxas Street corridor.",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 8,
-            category = "Dispatch Alert",
-            isPinned = false
-        )
-    )
-
-    val dumpsites = mutableStateListOf(
-        Dumpsite(
-            id = "ds_1",
-            name = "Nasugbu MRF (Recovery Facility)",
-            type = "Materials Recovery Facility",
-            address = "J.P. Laurel St, Nasugbu, Batangas",
-            latitude = 14.0755,
-            longitude = 120.6350,
-            capacityPercent = 65,
-            operatingHours = "6:00 AM - 6:00 PM",
-            acceptedWasteTypes = "General Household Waste, Compostables & Recyclables",
-            isOpenNow = true,
-            contactNumber = "(043) 723-HAKOT"
-        ),
-        Dumpsite(
-            id = "ds_2",
-            name = "Central Municipal Landfill",
-            type = "Sanitary Landfill",
-            address = "Nasugbu Outer Bypass Road",
-            latitude = 14.0820,
-            longitude = 120.6420,
-            capacityPercent = 42,
-            operatingHours = "5:00 AM - 8:00 PM",
-            acceptedWasteTypes = "All Municipal & Residual Waste",
-            isOpenNow = true,
-            contactNumber = "(043) 723-9900"
-        )
-    )
-
-    val trucks = mutableStateListOf(
-        GarbageTruck(
-            id = "tr_1",
-            truckCode = "Hakot Truck #1",
-            plateNumber = "ABK-8891",
-            driverName = "Mario Santos",
-            assignedRoute = "C. Alvarez to F. Alix Street Corridor",
-            assignedBarangays = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-            destinationDumpsite = "Nasugbu MRF Facility",
-            latitude = 14.0715,
-            longitude = 120.6255,
-            status = TruckStatus.ACTIVE_ON_ROUTE,
-            speedKmH = 22,
-            lastGpsUpdate = "Live - 1 min ago"
-        ),
-        GarbageTruck(
-            id = "tr_2",
-            truckCode = "Hakot Truck #2",
-            plateNumber = "NWD-4512",
-            driverName = "Juan Dela Cruz",
-            assignedRoute = "Roxas Street Corridor",
-            assignedBarangays = "Spans Barangays Wawa & Bucana",
-            destinationDumpsite = "Central Municipal Landfill",
-            latitude = 14.0718,
-            longitude = 120.6330,
-            status = TruckStatus.ACTIVE_ON_ROUTE,
-            speedKmH = 18,
-            lastGpsUpdate = "Live - 2 mins ago"
-        ),
-        GarbageTruck(
-            id = "tr_3",
-            truckCode = "Hakot Truck #3",
-            plateNumber = "RST-9904",
-            driverName = "Pedro Penduko",
-            assignedRoute = "P. Burgos Street Pass",
-            assignedBarangays = "Spans Barangays Looc & Kaylaway",
-            destinationDumpsite = "Nasugbu MRF Facility",
-            latitude = 14.0740,
-            longitude = 120.6325,
-            status = TruckStatus.UNLOADING_AT_DUMPSITE,
-            speedKmH = 0,
-            lastGpsUpdate = "Live - Just now"
-        )
-    )
-
-    val routes = mutableStateListOf(
-        CollectionRoute(
-            id = "rt_1",
-            routeName = "C. Alvarez to F. Alix Street Corridor",
-            barangaysCovered = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-            colorHex = 0xFF3B82F6,
-            waypoints = listOf(
-                Pair(300f, 400f),
-                Pair(450f, 480f),
-                Pair(550f, 500f)
-            ),
-            geoPoints = listOf(
-                Pair(14.0712, 120.6220),
-                Pair(14.0712, 120.6270),
-                Pair(14.0712, 120.6322),
-                Pair(14.0722, 120.6322),
-                Pair(14.0722, 120.6355)
-            ),
-            assignedTruckPlate = "ABK-8891",
-            scheduledTimeWindow = "8:00 AM - 11:30 AM",
-            scheduledDate = "Today",
-            destinationDumpsite = "Nasugbu MRF Facility"
-        ),
-        CollectionRoute(
-            id = "rt_2",
-            routeName = "Roxas Street Corridor",
-            barangaysCovered = "Roxas St (Spans Brgy Wawa & Bucana)",
-            colorHex = 0xFFF59E0B,
-            waypoints = listOf(
-                Pair(200f, 250f),
-                Pair(500f, 260f),
-                Pair(800f, 280f)
-            ),
-            geoPoints = listOf(
-                Pair(14.0705, 120.6255),
-                Pair(14.0712, 120.6290),
-                Pair(14.0718, 120.6330),
-                Pair(14.0725, 120.6370)
-            ),
-            assignedTruckPlate = "NWD-4512",
-            scheduledTimeWindow = "1:00 PM - 4:30 PM",
-            scheduledDate = "Today",
-            destinationDumpsite = "Central Municipal Landfill"
-        ),
-        CollectionRoute(
-            id = "rt_3",
-            routeName = "P. Burgos Street Pass",
-            barangaysCovered = "P. Burgos St (Spans Brgy Looc & Kaylaway)",
-            colorHex = 0xFF10B981,
-            waypoints = listOf(
-                Pair(600f, 300f),
-                Pair(750f, 320f),
-                Pair(850f, 450f)
-            ),
-            geoPoints = listOf(
-                Pair(14.0680, 120.6275),
-                Pair(14.0710, 120.6295),
-                Pair(14.0740, 120.6325)
-            ),
-            assignedTruckPlate = "RST-9904",
-            scheduledTimeWindow = "5:00 PM - 8:00 PM",
-            scheduledDate = "Today",
-            destinationDumpsite = "Nasugbu MRF Facility"
-        )
-    )
-
-    val reports = mutableStateListOf(
-        AnonymousReport(
-            id = "rep_100",
-            referenceNumber = "#HK-8924",
-            accessToken = "AUTH-8A2F-9D4C-3B1E",
-            reportType = ReportType.NO_ROUTE_IN_AREA,
-            locationName = "P. Burgos Street Extension, Nasugbu",
-            latitude = 14.0680,
-            longitude = 120.6275,
-            description = "No waste collection route assigned for our section of P. Burgos Street",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 1,
-            status = ReportStatus.IN_PROGRESS,
-            assignedOffice = ReportType.NO_ROUTE_IN_AREA.targetOffice,
-            assignedHandlerName = "Engr. Marco Valenzuela"
-        ),
-        AnonymousReport(
-            id = "rep_101",
-            referenceNumber = "#HK-8925",
-            accessToken = "AUTH-4C7B-1E8D-9F0A",
-            reportType = ReportType.MISSED_COLLECTION,
-            locationName = "C. Alvarez Street corner Zone 2",
-            latitude = 14.0712,
-            longitude = 120.6270,
-            description = "Truck skipped morning collection for 3 houses",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 2,
-            status = ReportStatus.SUBMITTED,
-            assignedOffice = ReportType.MISSED_COLLECTION.targetOffice,
-            assignedHandlerName = "Unassigned Handler"
-        )
-    )
-
+    val adminProfiles = mutableStateListOf<AdminUserProfile>()
+    val invitations = mutableStateListOf<DistrictAdminInvitation>()
+    val auditLogs = mutableStateListOf<AuditLogEntry>()
+    val reportMessages = mutableStateListOf<ReportMessage>()
+    val announcements = mutableStateListOf<Announcement>()
+    val dumpsites = mutableStateListOf<Dumpsite>()
+    val trucks = mutableStateListOf<GarbageTruck>()
+    val routes = mutableStateListOf<CollectionRoute>()
+    val reports = mutableStateListOf<AnonymousReport>()
     val schedules = mutableStateListOf<ScheduleItem>()
 
     init {
-        generateDefaultSchedules()
+        // Ready for live database queries
     }
 
-    private fun generateDefaultSchedules() {
-        val currDate = LocalDate.now()
-        schedules.clear()
-        
-        // Today's working schedules based on Street Names spanning multiple barangays
-        schedules.add(
-            ScheduleItem(
-                id = "sch_1",
-                barangay = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-                routeName = "C. Alvarez to F. Alix Street Corridor",
-                date = currDate,
-                startTime = LocalTime.of(8, 0),
-                endTime = LocalTime.of(11, 30),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #1 (ABK-8891)",
-                status = "On Track"
-            )
-        )
-        schedules.add(
-            ScheduleItem(
-                id = "sch_2",
-                barangay = "Roxas Street (Spans Brgy Wawa & Bucana)",
-                routeName = "Roxas Street Corridor",
-                date = currDate,
-                startTime = LocalTime.of(13, 0),
-                endTime = LocalTime.of(16, 30),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #2 (NWD-4512)",
-                status = "Scheduled"
-            )
-        )
-        schedules.add(
-            ScheduleItem(
-                id = "sch_3",
-                barangay = "P. Burgos Street (Spans Brgy Looc & Kaylaway)",
-                routeName = "P. Burgos Street Pass",
-                date = currDate,
-                startTime = LocalTime.of(17, 0),
-                endTime = LocalTime.of(20, 0),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #3 (RST-9904)",
-                status = "Scheduled"
-            )
-        )
+    // ---------------------------------------------------------
+    // LOAD NASUGBU GIS DATA FROM SUPABASE
+    // ---------------------------------------------------------
 
-        // Tomorrow's schedules
-        schedules.add(
-            ScheduleItem(
-                id = "sch_4",
-                barangay = "Nasugbu Highway (Spans Multiple Barangays)",
-                routeName = "Roxas Street Corridor",
-                date = currDate.plusDays(1),
-                startTime = LocalTime.of(7, 30),
-                endTime = LocalTime.of(11, 0),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #1 (ABK-8891)",
-                status = "Scheduled"
-            )
-        )
-        schedules.add(
-            ScheduleItem(
-                id = "sch_5",
-                barangay = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-                routeName = "C. Alvarez to F. Alix Street Corridor",
-                date = currDate.plusDays(1),
-                startTime = LocalTime.of(14, 0),
-                endTime = LocalTime.of(17, 0),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #2 (NWD-4512)",
-                status = "Scheduled"
-            )
-        )
+    suspend fun loadNasugbuGisData(): Boolean {
+        if (isGisLoading) return false
+
+        isGisLoading = true
+        gisLoadError = ""
+
+        try {
+            val result = SupabaseClient.fetchNasugbuMapGeoJson()
+
+            if (result == null) {
+                gisLoadError = SupabaseClient.gisLoadError
+                return false
+            }
+
+            val barangays = JSONObject(result.first)
+            val roads = JSONObject(result.second)
+
+            val barangayFeatures = barangays.getJSONArray("features")
+            val roadFeatures = roads.getJSONArray("features")
+
+            // Save the actual GeoJSON
+            barangayGeoJson = result.first
+            roadGeoJson = result.second
+
+            // Save the actual feature counts
+            gisBarangayCount = barangayFeatures.length()
+            gisRoadCount = roadFeatures.length()
+
+            isGisLoaded = true
+            return true
+
+        } catch (e: Exception) {
+            gisLoadError = e.message ?: "Failed to process GIS data"
+            return false
+
+        } finally {
+            isGisLoading = false
+        }
+    }
+
+    // Validates whether selected street segment IDs connect consecutively
+    fun validateRouteConnectivity(segmentIds: List<String>): Pair<Boolean, String> {
+        if (segmentIds.size <= 1) return Pair(true, "Route geometry validated")
+
+        for (i in 0 until segmentIds.size - 1) {
+            val currSeg = streetSegments.find { it.segmentId == segmentIds[i] }
+            val nextSeg = streetSegments.find { it.segmentId == segmentIds[i + 1] }
+
+            if (currSeg != null && nextSeg != null) {
+                val isConnected = currSeg.connectedSegmentIds.contains(nextSeg.segmentId) ||
+                        nextSeg.connectedSegmentIds.contains(currSeg.segmentId)
+                if (!isConnected) {
+                    return Pair(false, "Disconnected segment warning: '${currSeg.streetName}' does not connect to '${nextSeg.streetName}'")
+                }
+            }
+        }
+        return Pair(true, "All consecutive street segments connected properly")
     }
 
     fun login(emailInput: String, passwordInput: String): Boolean {
@@ -595,6 +343,22 @@ object HakotRepository {
             assignedOffice = type.targetOffice
         )
         reports.add(0, newReport)
+
+        // Asynchronously sync new report to Supabase PostgREST waste_reports table
+        CoroutineScope(Dispatchers.IO).launch {
+            val json = JSONObject().apply {
+                put("id", newReport.id)
+                put("reference_number", newReport.referenceNumber)
+                put("access_token", newReport.accessToken)
+                put("report_type", newReport.reportType.name)
+                put("location_name", newReport.locationName)
+                put("description", newReport.description)
+                put("status", newReport.status.name)
+                put("assigned_office", newReport.assignedOffice)
+            }
+            SupabaseClient.insertTableRecord("waste_reports", json)
+        }
+
         return newReport
     }
 

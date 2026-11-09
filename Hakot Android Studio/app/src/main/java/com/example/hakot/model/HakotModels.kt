@@ -53,6 +53,14 @@ enum class AdminStatus(val label: String) {
     REVOKED("Revoked")
 }
 
+enum class SegmentProgressStatus(val label: String, val colorHex: Long) {
+    NOT_STARTED("Not Started", 0xFF3B82F6),
+    IN_PROGRESS("In Progress", 0xFFF59E0B),
+    COMPLETED("Completed", 0xFF10B981),
+    SKIPPED("Skipped", 0xFF6B7280),
+    BLOCKED("Road Blocked", 0xFFEF4444)
+}
+
 enum class OrganizationType(val label: String) {
     MUNICIPALITY("Municipality / LGU"),
     DISTRICT("District / City Zone"),
@@ -70,6 +78,11 @@ data class OrganizationConfig(
     val coveredBarangays: List<String>,
     val adminContactEmail: String,
     val adminContactPhone: String
+)
+
+data class BarangayItem(
+    val id: String,
+    val name: String
 )
 
 data class AdminUserProfile(
@@ -109,6 +122,44 @@ data class AuditLogEntry(
     val action: String,
     val targetRecord: String,
     val timestampMillis: Long
+)
+
+data class StreetSegment(
+    val segmentId: String,
+    val streetName: String,
+    val barangayId: String,
+    val barangayName: String,
+    val municipalityOrgId: String,
+    val roadType: String = "PRIMARY_STREET",
+    val geoPoints: List<Pair<Double, Double>>,
+    val connectedSegmentIds: List<String> = emptyList(),
+    val dataSource: String = "PostGIS EPSG:4326 WGS84"
+)
+
+data class RouteSegmentJunction(
+    val routeId: String,
+    val segmentId: String,
+    val sequenceOrder: Int,
+    val traversalDirection: String = "FORWARD"
+)
+
+data class CollectionProgressRecord(
+    val scheduleId: String,
+    val segmentId: String,
+    var status: SegmentProgressStatus = SegmentProgressStatus.NOT_STARTED,
+    var confirmedByUserId: String = "m.lopez@nasugbu.gov.ph",
+    var confirmedAtMillis: Long = System.currentTimeMillis()
+)
+
+data class TruckGpsTrailPoint(
+    val id: String,
+    val truckId: String,
+    val scheduleId: String,
+    val latitude: Double,
+    val longitude: Double,
+    val timestampMillis: Long,
+    val accuracyMeters: Float = 3.5f,
+    val speedKmH: Int = 22
 )
 
 data class Announcement(
@@ -254,7 +305,8 @@ data class ScheduleItem(
     val endTime: LocalTime,
     val wasteCategory: WasteCategory,
     val truckAssigned: String,
-    val status: String
+    val status: String,
+    val barangayId: String = "brgy_041019001"
 )
 
 data class ReportMessage(
