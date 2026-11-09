@@ -40,8 +40,12 @@ data class DetailedIntersection(
     val progress2: Double
 )
 
-data class RawMatchHit(
-    val cand: StreetSegment,
+data class ProjectionPoint(
+    val lat: Double,
+    val lng: Double,
+    val segIndex: Int,
+    val t: Double,
+    val distanceMeters: Double,
     val progress: Double
 )
 
@@ -126,17 +130,21 @@ object RoadMatchingEngine {
         return geoPoints.last()
     }
 
-    private fun pointToLineStringDistanceMeters(
+    private fun projectPointDetailed(
         sketchPt: GeoPoint,
         geoPoints: List<Pair<Double, Double>>
-    ): Pair<Double, Double> {
+    ): ProjectionPoint {
         val metrics = computeLineMetrics(geoPoints)
         var minDistance = Double.MAX_VALUE
+        var bestSegIndex = 0
+        var bestT = 0.0
+        var bestLat = geoPoints.first().first
+        var bestLng = geoPoints.first().second
         var bestPosition = 0.0
 
         if (metrics.totalLengthMeters == 0.0) {
             val p = geoPoints.first()
-            return Pair(distanceInMeters(sketchPt.latitude, sketchPt.longitude, p.first, p.second), 0.0)
+            return ProjectionPoint(p.first, p.second, 0, 0.0, distanceInMeters(sketchPt.latitude, sketchPt.longitude, p.first, p.second), 0.0)
         }
 
         for (i in 0 until geoPoints.size - 1) {
@@ -152,6 +160,10 @@ object RoadMatchingEngine {
             val dist = distanceInMeters(sketchPt.latitude, sketchPt.longitude, proj.first, proj.second)
             if (dist < minDistance) {
                 minDistance = dist
+                bestSegIndex = i
+                bestT = proj.third
+                bestLat = proj.first
+                bestLng = proj.second
                 val segStartDist = metrics.cumulativeDistances[i]
                 val segLen = metrics.segmentLengths[i]
                 val projOffsetFromSegStart = distanceInMeters(p1.first, p1.second, proj.first, proj.second)
@@ -159,10 +171,10 @@ object RoadMatchingEngine {
                 bestPosition = (absoluteDist / metrics.totalLengthMeters).coerceIn(0.0, 1.0)
             }
         }
-        return Pair(minDistance, bestPosition)
+        return ProjectionPoint(bestLat, bestLng, bestSegIndex, bestT, minDistance, bestPosition)
     }
 
-    // Phase 2.13.2: Return ALL actual geometric intersections between two LineStrings with complete index and progress info
+    // Phase 2.13.10: Return ALL actual geometric intersections & collinear overlaps with complete index and progress info
     fun findAllLineStringIntersections(
         line1: List<Pair<Double, Double>>,
         line2: List<Pair<Double, Double>>
@@ -226,6 +238,16 @@ object RoadMatchingEngine {
                         if (results.none { abs(it.progress1 - p1) < 0.001 && abs(it.progress2 - p2) < 0.001 }) {
                             results.add(DetailedIntersection(coord, i, j, t, u, p1, p2))
                         }
+                    }
+                } else {
+                    // Collinear segment handling: Check if segment AB and CD overlap
+                    val projC = projectPointToLineSegment(cx, cy, ax, ay, bx, by)
+                    if (projC.third in 0.0..1.0 && distanceInMeters(cy, cx, projC.first, projC.second) <= 5.0) {
+                        addEndpointMatch(Pair(cy, cx), i, j, projC.third, 0.0)
+                    }
+                    val projD = projectPointToLineSegment(dx, dy, ax, ay, bx, by)
+                    if (projD.third in 0.0..1.0 && distanceInMeters(dy, dx, projD.first, projD.second) <= 5.0) {
+                        addEndpointMatch(Pair(dy, dx), i, j, projD.third, 1.0)
                     }
                 }
             }
@@ -345,10 +367,11 @@ object RoadMatchingEngine {
             sampledSketch.add(sketchPoints.last())
         }
 
-        // Phase 2.13.2: Sequence-Aware Beam Search (Fix 1: Unmatched sample handling)
+        // Phase 2.13.10: Intersection-Aware Beam Search preserving transition edges in BeamNode
         data class BeamNode(
             val cand: StreetSegment,
-            val progress: Double,
+            val projection: ProjectionPoint,
+            val resolvedIntersection: DetailedIntersection?,
             val cost: Double,
             val prevNode: BeamNode?
         )
@@ -357,9 +380,9 @@ object RoadMatchingEngine {
 
         for (sketchPt in sampledSketch) {
             val sortedCandidates = candidateSegments.map { cand ->
-                val res = pointToLineStringDistanceMeters(sketchPt, cand.geoPoints)
-                Triple(cand, res.first, res.second)
-            }.filter { it.second <= maxSnapDistanceMeters }.sortedBy { it.second }
+                val proj = projectPointDetailed(sketchPt, cand.geoPoints)
+                Pair(cand, proj)
+            }.filter { it.second.distanceMeters <= maxSnapDistanceMeters }.sortedBy { it.second.distanceMeters }
 
             if (sortedCandidates.isEmpty()) {
                 hasUnmatchedPortions = true
@@ -373,30 +396,31 @@ object RoadMatchingEngine {
 
             for (candPair in sortedCandidates.take(beamWidth)) {
                 val cand = candPair.first
-                val dist = candPair.second
-                val prog = candPair.third
+                val proj = candPair.second
 
                 if (activeBeam.isEmpty()) {
-                    newBeam.add(BeamNode(cand, prog, dist, null))
+                    newBeam.add(BeamNode(cand, proj, null, proj.distanceMeters, null))
                 } else {
                     for (prev in activeBeam) {
-                        var transitionCost = dist
+                        var transitionCost = proj.distanceMeters
+                        var chosenInter: DetailedIntersection? = null
+
                         if (prev.cand.segmentId != cand.segmentId) {
                             val intersections = findAllLineStringIntersections(prev.cand.geoPoints, cand.geoPoints)
                             if (intersections.isEmpty()) {
                                 continue
                             } else {
-                                val bestInter = intersections.minByOrNull { abs(it.progress1 - prev.progress) + abs(it.progress2 - prog) }
-                                if (bestInter != null) {
-                                    transitionCost += 5.0 + abs(bestInter.progress1 - prev.progress) * 10.0
+                                chosenInter = intersections.minByOrNull { abs(it.progress1 - prev.projection.progress) + abs(it.progress2 - proj.progress) }
+                                if (chosenInter != null) {
+                                    transitionCost += 5.0 + abs(chosenInter.progress1 - prev.projection.progress) * 10.0
                                 }
                             }
                         } else {
-                            if (prog < prev.progress - 0.25) {
+                            if (proj.progress < prev.projection.progress - 0.25) {
                                 transitionCost += 100.0 // Backtracking penalty
                             }
                         }
-                        newBeam.add(BeamNode(cand, prog, prev.cost + transitionCost, prev))
+                        newBeam.add(BeamNode(cand, proj, chosenInter, prev.cost + transitionCost, prev))
                     }
                 }
             }
@@ -422,38 +446,56 @@ object RoadMatchingEngine {
 
         // Backtrack best beam path
         val bestNode = activeBeam.first()
-        val rawHits = mutableListOf<RawMatchHit>()
+        val nodePath = mutableListOf<BeamNode>()
         var curr: BeamNode? = bestNode
         while (curr != null) {
-            rawHits.add(0, RawMatchHit(curr.cand, curr.progress))
+            nodePath.add(0, curr)
             curr = curr.prevNode
         }
 
-        val traversalOccurrences = mutableListOf<Triple<StreetSegment, MutableList<Double>, Unit>>()
-        
-        for (hit in rawHits) {
-            if (traversalOccurrences.isNotEmpty() && traversalOccurrences.last().first.segmentId == hit.cand.segmentId) {
-                traversalOccurrences.last().second.add(hit.progress)
+        data class OccRecord(
+            val cand: StreetSegment,
+            val projections: MutableList<ProjectionPoint>,
+            var exitIntersection: DetailedIntersection? = null
+        )
+
+        val occurrences = mutableListOf<OccRecord>()
+        for (node in nodePath) {
+            if (occurrences.isNotEmpty() && occurrences.last().cand.segmentId == node.cand.segmentId) {
+                occurrences.last().projections.add(node.projection)
             } else {
-                traversalOccurrences.add(Triple(hit.cand, mutableListOf(hit.progress), Unit))
+                if (occurrences.isNotEmpty() && node.resolvedIntersection != null) {
+                    occurrences.last().exitIntersection = node.resolvedIntersection
+                }
+                occurrences.add(OccRecord(node.cand, mutableListOf(node.projection)))
             }
         }
 
         val finalMatchedList = mutableListOf<MatchedSegment>()
 
-        for (occ in traversalOccurrences) {
-            val cand = occ.first
-            val tList = occ.second
+        for (m in occurrences.indices) {
+            val occ = occurrences[m]
+            val cand = occ.cand
+            val projList = occ.projections
 
-            val entryT = tList.first()
-            val exitT = tList.last()
-            val metrics = computeLineMetrics(cand.geoPoints)
-            val entryCoord = interpolatePointAlongLine(cand.geoPoints, metrics, entryT)
-            val exitCoord = interpolatePointAlongLine(cand.geoPoints, metrics, exitT)
+            val firstProj = projList.first()
+            val lastProj = projList.last()
 
+            var entryCoord = Pair(firstProj.lat, firstProj.lng)
+            var exitCoord = Pair(lastProj.lat, lastProj.lng)
+
+            if (m > 0 && occurrences[m - 1].exitIntersection != null) {
+                entryCoord = occurrences[m - 1].exitIntersection!!.intersectionCoordinate
+            }
+            if (occ.exitIntersection != null) {
+                exitCoord = occ.exitIntersection!!.intersectionCoordinate
+            }
+
+            val entryT = firstProj.progress
+            val exitT = lastProj.progress
             val direction = if (entryT <= exitT) "FORWARD" else "REVERSE"
 
-            // Fix 3: Correct Reverse Traversal Geometry Trimming
+            val metrics = computeLineMetrics(cand.geoPoints)
             val trimmedGeoPoints = mutableListOf<Pair<Double, Double>>()
             val minT = min(entryT, exitT)
             val maxT = max(entryT, exitT)
@@ -507,7 +549,7 @@ object RoadMatchingEngine {
             )
         }
 
-        // Phase 2.13.2: Exact Intersection-Based Transitions (Fix 2)
+        // Validate transitions using resolved intersection boundaries
         if (finalMatchedList.size >= 2) {
             for (m in 0 until finalMatchedList.size - 1) {
                 val seg1 = finalMatchedList[m]
@@ -526,10 +568,6 @@ object RoadMatchingEngine {
                 if (intersections.isEmpty() || matchingIntersection == null) {
                     hasDisconnectedGaps = true
                     warnings.add("Transition validation failed between '${seg1.streetName}' and '${seg2.streetName}' (traversal exit/entry positions do not meet at a proven intersection within 75m).")
-                } else {
-                    val interCoord = matchingIntersection.intersectionCoordinate
-                    finalMatchedList[m] = seg1.copy(exitCoordinate = interCoord)
-                    finalMatchedList[m + 1] = seg2.copy(entryCoordinate = interCoord)
                 }
             }
         }

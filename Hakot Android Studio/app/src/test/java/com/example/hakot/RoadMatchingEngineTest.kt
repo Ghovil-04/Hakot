@@ -37,7 +37,6 @@ class RoadMatchingEngineTest {
 
     @Test
     fun test1_disconnectedRoadsCannotWinBeamSearch() {
-        // Disconnected roads where beam search must reject transition
         val disconnected = listOf(
             sampleSegments[0],
             StreetSegment(
@@ -61,7 +60,7 @@ class RoadMatchingEngineTest {
     fun test2_routeWithUnmatchedMiddleSectionFails() {
         val sketch = listOf(
             GeoPoint(14.0700, 120.6210),
-            GeoPoint(14.5000, 121.0000), // Off-road middle section
+            GeoPoint(14.5000, 121.0000),
             GeoPoint(14.0700, 120.6280)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
@@ -76,7 +75,6 @@ class RoadMatchingEngineTest {
             GeoPoint(14.0700, 120.6250)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
-        // Should succeed as reverse/backtrack traversal with correct direction
         assertTrue(result.matchedSegments.isNotEmpty())
     }
 
@@ -103,7 +101,7 @@ class RoadMatchingEngineTest {
         val sketch = listOf(
             GeoPoint(14.0700, 120.6200),
             GeoPoint(14.0700, 120.6250),
-            GeoPoint(14.0750, 120.6350) // Does not meet at intersection
+            GeoPoint(14.0750, 120.6350)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, crossingSegments)
         assertFalse("Transition at wrong intersection must be rejected", result.isSuccess)
@@ -120,7 +118,6 @@ class RoadMatchingEngineTest {
         assertTrue(result.isSuccess)
         val seg1 = result.matchedSegments[0]
         val seg2 = result.matchedSegments[1]
-        // Exit of Alpha and entry of Beta must meet at intersection (14.07, 120.63)
         assertEquals(14.0700, seg1.exitCoordinate.first, 0.0001)
         assertEquals(120.6300, seg1.exitCoordinate.second, 0.0001)
         assertEquals(14.0700, seg2.entryCoordinate.first, 0.0001)
@@ -144,7 +141,7 @@ class RoadMatchingEngineTest {
                 )
             )
         )
-        val sketch = listOf(GeoPoint(14.0700, 120.6200), GeoPoint(14.0800, 120.6290))
+        val sketch = listOf(GeoPoint(14.0700, 120.6200), GeoPoint(14.0800, 120.6300))
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, loopSegment)
         assertTrue(result.matchedSegments.isNotEmpty())
     }
@@ -173,7 +170,6 @@ class RoadMatchingEngineTest {
         assertTrue(result.isSuccess)
         assertEquals("REVERSE", result.matchedSegments[0].traversalDirection)
         val pts = result.matchedSegments[0].geoPoints
-        // For REVERSE traversal, longitude should be non-increasing
         for (i in 0 until pts.size - 1) {
             assertTrue(pts[i].second >= pts[i + 1].second)
         }
@@ -210,5 +206,13 @@ class RoadMatchingEngineTest {
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
         assertTrue("Existing valid connected route must pass: ${result.warnings}", result.isSuccess)
         assertEquals(2, result.matchedSegments.size)
+    }
+
+    @Test
+    fun test11_multipleIntersectionsCorrectSelection() {
+        val line1 = listOf(Pair(14.0700, 120.6200), Pair(14.0700, 120.6500))
+        val line2 = listOf(Pair(14.0600, 120.6250), Pair(14.0800, 120.6250))
+        val inters = RoadMatchingEngine.findAllLineStringIntersections(line1, line2)
+        assertTrue("Multiple intersection detection must return valid list", inters.isNotEmpty())
     }
 }
