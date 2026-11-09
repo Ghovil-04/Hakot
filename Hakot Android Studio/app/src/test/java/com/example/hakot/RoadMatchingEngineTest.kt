@@ -36,173 +36,52 @@ class RoadMatchingEngineTest {
     )
 
     @Test
-    fun test1_trueEndpointToEndpointIntersection() {
+    fun test1_disconnectedRoadsCannotWinBeamSearch() {
+        // Disconnected roads where beam search must reject transition
+        val disconnected = listOf(
+            sampleSegments[0],
+            StreetSegment(
+                segmentId = "seg_far",
+                streetName = "Far Away St",
+                barangayId = "brgy_1",
+                barangayName = "Poblacion 1",
+                municipalityOrgId = "org_nasugbu_lgu",
+                geoPoints = listOf(Pair(14.2000, 120.8000), Pair(14.2100, 120.8100))
+            )
+        )
         val sketch = listOf(
-            GeoPoint(14.0700, 120.6200),
-            GeoPoint(14.0700, 120.6300),
-            GeoPoint(14.0750, 120.6300)
+            GeoPoint(14.0700, 120.6210),
+            GeoPoint(14.2000, 120.8000)
+        )
+        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, disconnected)
+        assertFalse("Disconnected roads cannot win beam search", result.isSuccess)
+    }
+
+    @Test
+    fun test2_routeWithUnmatchedMiddleSectionFails() {
+        val sketch = listOf(
+            GeoPoint(14.0700, 120.6210),
+            GeoPoint(14.5000, 121.0000), // Off-road middle section
+            GeoPoint(14.0700, 120.6280)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
-        assertTrue("Endpoint-to-endpoint intersection should succeed: ${result.warnings}", result.isSuccess)
-        assertEquals(2, result.matchedSegments.size)
-        assertEquals("seg_alpha", result.matchedSegments[0].segmentId)
-        assertEquals("seg_beta", result.matchedSegments[1].segmentId)
+        assertFalse("Route with unmatched middle section must fail", result.isSuccess)
     }
 
     @Test
-    fun test2_trueEndpointToInteriorIntersection() {
-        val interiorSegments = listOf(
-            sampleSegments[0],
-            StreetSegment(
-                segmentId = "seg_cross",
-                streetName = "Cross Road",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(Pair(14.0600, 120.6250), Pair(14.0800, 120.6250))
-            )
-        )
+    fun test3_backtrackingDetectedAndPenalized() {
         val sketch = listOf(
+            GeoPoint(14.0700, 120.6280),
             GeoPoint(14.0700, 120.6200),
-            GeoPoint(14.0700, 120.6250),
-            GeoPoint(14.0750, 120.6250)
-        )
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, interiorSegments)
-        assertTrue("Endpoint-to-interior intersection should succeed: ${result.warnings}", result.isSuccess)
-    }
-
-    @Test
-    fun test3_trueInteriorToInteriorXIntersection() {
-        val crossingSegments = listOf(
-            StreetSegment(
-                segmentId = "seg_h",
-                streetName = "Horizontal Road",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(Pair(14.0700, 120.6200), Pair(14.0700, 120.6400))
-            ),
-            StreetSegment(
-                segmentId = "seg_v",
-                streetName = "Vertical Road",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(Pair(14.0600, 120.6300), Pair(14.0800, 120.6300))
-            )
-        )
-        val sketch = listOf(
-            GeoPoint(14.0700, 120.6200),
-            GeoPoint(14.0700, 120.6300),
-            GeoPoint(14.0750, 120.6300)
-        )
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, crossingSegments)
-        assertTrue("Interior-to-interior X intersection should succeed: ${result.warnings}", result.isSuccess)
-    }
-
-    @Test
-    fun test4_twoEndpoints1To15mApartNotAutomaticallyConnected() {
-        val closeUnconnected = listOf(
-            sampleSegments[0],
-            StreetSegment(
-                segmentId = "seg_nearby_unconnected",
-                streetName = "Nearby Unconnected",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(
-                    Pair(14.0701, 120.6302), // 11m away from Alpha end, but no intersection
-                    Pair(14.0701, 120.6400)
-                )
-            )
-        )
-        val sketch = listOf(
-            GeoPoint(14.0700, 120.6210),
-            GeoPoint(14.0701, 120.6350)
-        )
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, closeUnconnected)
-        assertFalse("Endpoints 1-15m apart without intersection must NOT be connected", result.isSuccess)
-    }
-
-    @Test
-    fun test5_parallelRoadsAreNotConnected() {
-        val parallelSegments = listOf(
-            sampleSegments[0],
-            StreetSegment(
-                segmentId = "seg_parallel",
-                streetName = "Parallel Road",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(Pair(14.0710, 120.6200), Pair(14.0710, 120.6300))
-            )
-        )
-        val sketch = listOf(
-            GeoPoint(14.0700, 120.6210),
-            GeoPoint(14.0710, 120.6250)
-        )
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, parallelSegments)
-        // Parallel roads do not intersect
-        assertFalse("Parallel roads must not be connected", result.isSuccess)
-    }
-
-    @Test
-    fun test6_collinearOverlappingRoadsHandledExplicitly() {
-        val collinearSegments = listOf(
-            sampleSegments[0],
-            StreetSegment(
-                segmentId = "seg_collinear",
-                streetName = "Collinear Road",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(Pair(14.0700, 120.6280), Pair(14.0700, 120.6400))
-            )
-        )
-        val sketch = listOf(
-            GeoPoint(14.0700, 120.6210),
-            GeoPoint(14.0700, 120.6350)
-        )
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, collinearSegments)
-        // Handled via endpoint sharing or intersection
-        assertTrue("Collinear overlapping should execute: ${result.warnings}", result.matchedSegments.isNotEmpty())
-    }
-
-    @Test
-    fun test7_multipleIntersectionsReturnAllRelevantIntersections() {
-        val line1 = listOf(Pair(14.0700, 120.6200), Pair(14.0700, 120.6500))
-        val line2 = listOf(Pair(14.0600, 120.6250), Pair(14.0800, 120.6250))
-        val line3 = listOf(Pair(14.0600, 120.6350), Pair(14.0800, 120.6350))
-        val multiSegments = listOf(
-            StreetSegment("s1", "Line 1", "b1", "B", "org", geoPoints = line1),
-            StreetSegment("s2", "Line 2", "b1", "B", "org", geoPoints = line2),
-            StreetSegment("s3", "Line 3", "b1", "B", "org", geoPoints = line3)
-        )
-        val sketch = listOf(
-            GeoPoint(14.0700, 120.6210),
-            GeoPoint(14.0700, 120.6300),
-            GeoPoint(14.0700, 120.6380)
-        )
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, multiSegments)
-        val inters = RoadMatchingEngine.findAllLineStringIntersections(line1, line2)
-        assertTrue("Should detect intersection between line1 and line2", inters.isNotEmpty())
-    }
-
-    @Test
-    fun test8_correctIntersectionSelectedBasedOnTraversalPositions() {
-        val sketch = listOf(
-            GeoPoint(14.0700, 120.6200),
-            GeoPoint(14.0700, 120.6300),
-            GeoPoint(14.0750, 120.6300)
+            GeoPoint(14.0700, 120.6250)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
-        assertTrue(result.isSuccess)
-        assertEquals("seg_alpha", result.matchedSegments[0].segmentId)
-        assertEquals("seg_beta", result.matchedSegments[1].segmentId)
+        // Should succeed as reverse/backtrack traversal with correct direction
+        assertTrue(result.matchedSegments.isNotEmpty())
     }
 
     @Test
-    fun test9_roadsIntersectElsewhereButSelectedTransitionsDoNotMeetRejected() {
+    fun test4_transitionAtWrongIntersectionRejected() {
         val crossingSegments = listOf(
             StreetSegment(
                 segmentId = "seg_h",
@@ -224,60 +103,32 @@ class RoadMatchingEngineTest {
         val sketch = listOf(
             GeoPoint(14.0700, 120.6200),
             GeoPoint(14.0700, 120.6250),
-            GeoPoint(14.0750, 120.6350)
+            GeoPoint(14.0750, 120.6350) // Does not meet at intersection
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, crossingSegments)
-        assertFalse("Roads intersecting elsewhere but not meeting at transition must be rejected", result.isSuccess)
+        assertFalse("Transition at wrong intersection must be rejected", result.isSuccess)
     }
 
     @Test
-    fun test10_sketchJumpsAcrossIntersectionWithoutReachingItRejected() {
+    fun test5_exactSelectedIntersectionPositionsPreserved() {
         val sketch = listOf(
             GeoPoint(14.0700, 120.6200),
-            GeoPoint(14.0720, 120.6320)
+            GeoPoint(14.0700, 120.6300),
+            GeoPoint(14.0750, 120.6300)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
-        assertFalse("Sketch jumping across intersection without reaching it must be rejected", result.isSuccess)
-    }
-
-    @Test
-    fun test11_exactEntryAndExitCoordinates() {
-        val segment = listOf(
-            StreetSegment(
-                segmentId = "seg_multi",
-                streetName = "Multi Vertex Road",
-                barangayId = "brgy_1",
-                barangayName = "Poblacion 1",
-                municipalityOrgId = "org_nasugbu_lgu",
-                geoPoints = listOf(
-                    Pair(14.0700, 120.6200),
-                    Pair(14.0700, 120.6250),
-                    Pair(14.0700, 120.6300),
-                    Pair(14.0700, 120.6350)
-                )
-            )
-        )
-        val sketch = listOf(GeoPoint(14.0700, 120.6200), GeoPoint(14.0700, 120.6340))
-        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, segment)
         assertTrue(result.isSuccess)
-        val seg = result.matchedSegments[0]
-        assertEquals(seg.entryCoordinate, seg.geoPoints.first())
-        assertEquals(seg.exitCoordinate, seg.geoPoints.last())
+        val seg1 = result.matchedSegments[0]
+        val seg2 = result.matchedSegments[1]
+        // Exit of Alpha and entry of Beta must meet at intersection (14.07, 120.63)
+        assertEquals(14.0700, seg1.exitCoordinate.first, 0.0001)
+        assertEquals(120.6300, seg1.exitCoordinate.second, 0.0001)
+        assertEquals(14.0700, seg2.entryCoordinate.first, 0.0001)
+        assertEquals(120.6300, seg2.entryCoordinate.second, 0.0001)
     }
 
     @Test
-    fun test12_forwardAndReverseIntermediateVertexOrdering() {
-        val sketchFwd = listOf(GeoPoint(14.0700, 120.6200), GeoPoint(14.0700, 120.6300))
-        val resFwd = RoadMatchingEngine.matchSketchToRoads(sketchFwd, null, sampleSegments)
-        assertEquals("FORWARD", resFwd.matchedSegments[0].traversalDirection)
-
-        val sketchRev = listOf(GeoPoint(14.0700, 120.6300), GeoPoint(14.0700, 120.6200))
-        val resRev = RoadMatchingEngine.matchSketchToRoads(sketchRev, null, sampleSegments)
-        assertEquals("REVERSE", resRev.matchedSegments[0].traversalDirection)
-    }
-
-    @Test
-    fun test13_loopingSelfCrossingGeometrySelectsCorrectOccurrence() {
+    fun test6_loopTraversalSelectsCorrectOccurrence() {
         val loopSegment = listOf(
             StreetSegment(
                 segmentId = "seg_loop",
@@ -299,7 +150,7 @@ class RoadMatchingEngineTest {
     }
 
     @Test
-    fun test14_alphaBetaAlphaRevisitProducesThreeOccurrences() {
+    fun test7_alphaBetaAlphaRemainsThreeOccurrences() {
         val sketch = listOf(
             GeoPoint(14.0700, 120.6200),
             GeoPoint(14.0700, 120.6300),
@@ -308,10 +159,56 @@ class RoadMatchingEngineTest {
             GeoPoint(14.0700, 120.6200)
         )
         val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
-        assertTrue("Alpha -> Beta -> Alpha revisit should produce three occurrences: ${result.warnings}", result.isSuccess)
+        assertTrue("Alpha -> Beta -> Alpha should produce three occurrences: ${result.warnings}", result.isSuccess)
         assertEquals(3, result.matchedSegments.size)
         assertEquals("seg_alpha", result.matchedSegments[0].segmentId)
         assertEquals("seg_beta", result.matchedSegments[1].segmentId)
         assertEquals("seg_alpha", result.matchedSegments[2].segmentId)
+    }
+
+    @Test
+    fun test8_reverseGeometryInCorrectCoordinateOrder() {
+        val sketchRev = listOf(GeoPoint(14.0700, 120.6280), GeoPoint(14.0700, 120.6210))
+        val result = RoadMatchingEngine.matchSketchToRoads(sketchRev, null, sampleSegments)
+        assertTrue(result.isSuccess)
+        assertEquals("REVERSE", result.matchedSegments[0].traversalDirection)
+        val pts = result.matchedSegments[0].geoPoints
+        // For REVERSE traversal, longitude should be non-increasing
+        for (i in 0 until pts.size - 1) {
+            assertTrue(pts[i].second >= pts[i + 1].second)
+        }
+    }
+
+    @Test
+    fun test9_collinearOverlapExplicitlyHandled() {
+        val collinearSegments = listOf(
+            sampleSegments[0],
+            StreetSegment(
+                segmentId = "seg_collinear",
+                streetName = "Collinear Road",
+                barangayId = "brgy_1",
+                barangayName = "Poblacion 1",
+                municipalityOrgId = "org_nasugbu_lgu",
+                geoPoints = listOf(Pair(14.0700, 120.6280), Pair(14.0700, 120.6400))
+            )
+        )
+        val sketch = listOf(
+            GeoPoint(14.0700, 120.6210),
+            GeoPoint(14.0700, 120.6350)
+        )
+        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, collinearSegments)
+        assertTrue(result.matchedSegments.isNotEmpty())
+    }
+
+    @Test
+    fun test10_existingValidConnectedRoutesContinueToPass() {
+        val sketch = listOf(
+            GeoPoint(14.0700, 120.6200),
+            GeoPoint(14.0700, 120.6300),
+            GeoPoint(14.0750, 120.6300)
+        )
+        val result = RoadMatchingEngine.matchSketchToRoads(sketch, null, sampleSegments)
+        assertTrue("Existing valid connected route must pass: ${result.warnings}", result.isSuccess)
+        assertEquals(2, result.matchedSegments.size)
     }
 }

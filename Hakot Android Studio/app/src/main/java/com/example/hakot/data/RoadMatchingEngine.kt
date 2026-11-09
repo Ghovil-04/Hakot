@@ -45,6 +45,11 @@ data class IntersectionResult(
     val intersectionCoordinate: Pair<Double, Double>?
 )
 
+data class RawMatchHit(
+    val cand: StreetSegment,
+    val progress: Double
+)
+
 object RoadMatchingEngine {
 
     // Converts LatLng distance difference to meters (WGS84 EPSG:4326 metric approximation at 14.07° N)
@@ -162,7 +167,7 @@ object RoadMatchingEngine {
         return Pair(minDistance, bestPosition)
     }
 
-    // Phase 2.10: Return ALL actual geometric intersections between two LineStrings with complete index and progress info
+    // Phase 2.13: Return ALL actual geometric intersections between two LineStrings with complete index and progress info
     fun findAllLineStringIntersections(
         line1: List<Pair<Double, Double>>,
         line2: List<Pair<Double, Double>>
@@ -233,18 +238,6 @@ object RoadMatchingEngine {
         return results
     }
 
-    private fun findLineStringIntersection(
-        line1: List<Pair<Double, Double>>,
-        line2: List<Pair<Double, Double>>,
-        toleranceMeters: Double = 15.0
-    ): IntersectionResult {
-        val allIntersections = findAllLineStringIntersections(line1, line2)
-        if (allIntersections.isNotEmpty()) {
-            return IntersectionResult(true, allIntersections.first().intersectionCoordinate)
-        }
-        return IntersectionResult(false, null)
-    }
-
     fun matchSketchToRoads(
         sketchPoints: List<GeoPoint>,
         roadGeoJson: String?,
@@ -253,7 +246,6 @@ object RoadMatchingEngine {
         val startTime = System.currentTimeMillis()
         val warnings = mutableListOf<String>()
         var hasUnmatchedPortions = false
-        var hasAmbiguousMatches = false
         var hasDisconnectedGaps = false
 
         if (sketchPoints.size < 2) {
@@ -358,58 +350,85 @@ object RoadMatchingEngine {
             sampledSketch.add(sketchPoints.last())
         }
 
-        data class RawMatchHit(
+        // Phase 2.13: Sequence-Aware Beam Search with strict transition enforcement (Reject disconnected transitions immediately)
+        data class BeamNode(
             val cand: StreetSegment,
-            val progress: Double
+            val progress: Double,
+            val cost: Double,
+            val prevNode: BeamNode?
         )
 
-        val rawHits = mutableListOf<RawMatchHit>()
-        var previousMatchedCand: StreetSegment? = null
+        var activeBeam = mutableListOf<BeamNode>()
 
         for (sketchPt in sampledSketch) {
             val sortedCandidates = candidateSegments.map { cand ->
                 val res = pointToLineStringDistanceMeters(sketchPt, cand.geoPoints)
                 Triple(cand, res.first, res.second)
-            }.sortedBy { it.second }
+            }.filter { it.second <= maxSnapDistanceMeters }.sortedBy { it.second }
 
-            if (sortedCandidates.isNotEmpty()) {
-                val best = sortedCandidates[0]
-                var bestCand = best.first
-                var bestDist = best.second
+            if (sortedCandidates.isEmpty()) {
+                hasUnmatchedPortions = true
+                warnings.add("Off-road sketch point near ${sketchPt.latitude.toString().take(7)}, ${sketchPt.longitude.toString().take(7)} exceeds snap threshold.")
+                continue
+            }
 
-                // Continuity-aware candidate selection
-                if (previousMatchedCand != null && bestCand.segmentId != previousMatchedCand.segmentId) {
-                    val connectedCandidate = sortedCandidates.find { (cand, dist, _) ->
-                        dist <= maxSnapDistanceMeters && findLineStringIntersection(previousMatchedCand.geoPoints, cand.geoPoints).hasIntersection
-                    }
-                    if (connectedCandidate != null && connectedCandidate.second <= maxSnapDistanceMeters + 15.0) {
-                        bestCand = connectedCandidate.first
-                        bestDist = connectedCandidate.second
-                    }
-                }
+            val newBeam = mutableListOf<BeamNode>()
+            val beamWidth = 8
 
-                // Check Ambiguity against 2nd candidate
-                if (sortedCandidates.size > 1) {
-                    val secondBest = sortedCandidates[1]
-                    val deltaDist = secondBest.second - bestDist
-                    val intersectionRes = findLineStringIntersection(bestCand.geoPoints, secondBest.first.geoPoints)
+            for (candPair in sortedCandidates.take(beamWidth)) {
+                val cand = candPair.first
+                val dist = candPair.second
+                val prog = candPair.third
 
-                    if (bestDist <= maxSnapDistanceMeters && deltaDist < 3.0 && secondBest.first.segmentId != bestCand.segmentId && !intersectionRes.hasIntersection) {
-                        hasAmbiguousMatches = true
-                        warnings.add("Ambiguous match between '${bestCand.streetName}' and '${secondBest.first.streetName}' (delta ${deltaDist.toString().take(4)}m).")
-                    }
-                }
-
-                if (bestDist <= maxSnapDistanceMeters) {
-                    previousMatchedCand = bestCand
-                    if (rawHits.isEmpty() || rawHits.last().cand.segmentId != bestCand.segmentId || abs(rawHits.last().progress - best.third) > 0.05) {
-                        rawHits.add(RawMatchHit(bestCand, best.third))
-                    }
+                if (activeBeam.isEmpty()) {
+                    newBeam.add(BeamNode(cand, prog, dist, null))
                 } else {
-                    hasUnmatchedPortions = true
-                    warnings.add("Off-road sketch point near ${sketchPt.latitude.toString().take(7)}, ${sketchPt.longitude.toString().take(7)} ($bestDist meters off-road).")
+                    for (prev in activeBeam) {
+                        var transitionCost = dist
+                        if (prev.cand.segmentId != cand.segmentId) {
+                            val intersections = findAllLineStringIntersections(prev.cand.geoPoints, cand.geoPoints)
+                            if (intersections.isEmpty()) {
+                                // Phase 2.13 Requirement 1: REJECT disconnected transition immediately
+                                continue
+                            } else {
+                                val bestInter = intersections.minByOrNull { abs(it.progress1 - prev.progress) + abs(it.progress2 - prog) }
+                                if (bestInter != null) {
+                                    transitionCost += 5.0 + abs(bestInter.progress1 - prev.progress) * 10.0
+                                }
+                            }
+                        } else {
+                            if (prog < prev.progress - 0.25) {
+                                transitionCost += 100.0 // Backtracking penalty
+                            }
+                        }
+                        newBeam.add(BeamNode(cand, prog, prev.cost + transitionCost, prev))
+                    }
                 }
             }
+
+            if (newBeam.isNotEmpty()) {
+                activeBeam = newBeam.sortedBy { it.cost }.take(beamWidth).toMutableList()
+            }
+        }
+
+        if (activeBeam.isEmpty()) {
+            return RoadMatchResult(
+                isSuccess = false,
+                matchedSegments = emptyList(),
+                candidateRoadCount = candidateSegments.size,
+                totalGisRoadCount = totalCount,
+                executionTimeMs = System.currentTimeMillis() - startTime,
+                warnings = warnings.ifEmpty { listOf("Could not establish a continuous valid road sequence along the sketch (unmatched portions or disconnected transitions rejected).") }
+            )
+        }
+
+        // Backtrack best beam path
+        val bestNode = activeBeam.first()
+        val rawHits = mutableListOf<RawMatchHit>()
+        var curr: BeamNode? = bestNode
+        while (curr != null) {
+            rawHits.add(0, RawMatchHit(curr.cand, curr.progress))
+            curr = curr.prevNode
         }
 
         val traversalOccurrences = mutableListOf<Triple<StreetSegment, MutableList<Double>, Unit>>()
@@ -436,7 +455,7 @@ object RoadMatchingEngine {
 
             val direction = if (entryT <= exitT) "FORWARD" else "REVERSE"
 
-            // Exact Geometry Trimming preserving original vertex index and local segment position
+            // Exact Geometry Trimming using segment indices and local parameters
             val trimmedGeoPoints = mutableListOf<Pair<Double, Double>>()
             trimmedGeoPoints.add(entryCoord)
 
@@ -472,7 +491,7 @@ object RoadMatchingEngine {
             )
         }
 
-        // Validate actual transition validation between consecutive occurrences using actual intersection calculation (Tolerance: 250.0m for touch sampling discretization)
+        // Phase 2.13: Correct transition-position validation using metric distance <= 75.0m from intersection coordinate
         if (finalMatchedList.size >= 2) {
             for (m in 0 until finalMatchedList.size - 1) {
                 val seg1 = finalMatchedList[m]
@@ -481,29 +500,22 @@ object RoadMatchingEngine {
                 val line1 = candidateSegments.find { it.segmentId == seg1.segmentId }?.geoPoints ?: seg1.geoPoints
                 val line2 = candidateSegments.find { it.segmentId == seg2.segmentId }?.geoPoints ?: seg2.geoPoints
 
-                val intersection = findLineStringIntersection(line1, line2, toleranceMeters = 15.0)
+                val intersections = findAllLineStringIntersections(line1, line2)
+                val validTransition = intersections.any { inter ->
+                    val distExit1 = distanceInMeters(seg1.exitCoordinate.first, seg1.exitCoordinate.second, inter.intersectionCoordinate.first, inter.intersectionCoordinate.second)
+                    val distEntry2 = distanceInMeters(seg2.entryCoordinate.first, seg2.entryCoordinate.second, inter.intersectionCoordinate.first, inter.intersectionCoordinate.second)
+                    distExit1 <= 75.0 && distEntry2 <= 75.0
+                }
 
-                if (!intersection.hasIntersection) {
+                if (intersections.isEmpty() || !validTransition) {
                     hasDisconnectedGaps = true
-                    warnings.add("Disconnected transition between '${seg1.streetName}' and '${seg2.streetName}' (no actual geometric intersection coordinate proven).")
-                } else {
-                    val intersectCoord = intersection.intersectionCoordinate
-                    if (intersectCoord != null) {
-                        val distExit1 = distanceInMeters(seg1.exitCoordinate.first, seg1.exitCoordinate.second, intersectCoord.first, intersectCoord.second)
-                        val distEntry2 = distanceInMeters(seg2.entryCoordinate.first, seg2.entryCoordinate.second, intersectCoord.first, intersectCoord.second)
-                        val directGap = distanceInMeters(seg1.exitCoordinate.first, seg1.exitCoordinate.second, seg2.entryCoordinate.first, seg2.entryCoordinate.second)
-                        if (distExit1 > 150.0 && distEntry2 > 150.0 && directGap > 150.0) {
-                            hasDisconnectedGaps = true
-                            warnings.add("Transition mismatch between '${seg1.streetName}' and '${seg2.streetName}' (intersection exists elsewhere, but traversal positions do not meet there).")
-                        }
-                    }
+                    warnings.add("Transition validation failed between '${seg1.streetName}' and '${seg2.streetName}' (traversal exit/entry positions do not meet at a proven intersection within 75m).")
                 }
             }
         }
 
         val isFinalSuccess = finalMatchedList.isNotEmpty() &&
                 !hasUnmatchedPortions &&
-                !hasAmbiguousMatches &&
                 !hasDisconnectedGaps
 
         return RoadMatchResult(
