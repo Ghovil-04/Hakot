@@ -1,0 +1,272 @@
+#
+# There is insufficient memory for the Java Runtime Environment to continue.
+# Native memory allocation (mmap) failed to map 260046848 bytes. Error detail: G1 virtual space
+# Possible reasons:
+#   The system is out of physical RAM or swap space
+#   This process is running with CompressedOops enabled, and the Java Heap may be blocking the growth of the native heap
+# Possible solutions:
+#   Reduce memory load on the system
+#   Increase physical memory or swap space
+#   Check if swap backing store is full
+#   Decrease Java heap size (-Xmx/-Xms)
+#   Decrease number of Java threads
+#   Decrease Java thread stack sizes (-Xss)
+#   Set larger code cache with -XX:ReservedCodeCacheSize=
+#   JVM is running with Unscaled Compressed Oops mode in which the Java heap is
+#     placed in the first 4GB address space. The Java Heap base address is the
+#     maximum limit for the native heap growth. Please use -XX:HeapBaseMinAddress
+#     to set the Java Heap base and to place the Java Heap above 4GB virtual address.
+# This output file may be truncated or incomplete.
+#
+#  Out of Memory Error (os_windows.cpp:3766), pid=5508, tid=28612
+#
+# JRE version:  (25.0.3) (build )
+# Java VM: OpenJDK 64-Bit Server VM (25.0.3+-15898627-b508.16, mixed mode, sharing, tiered, compressed oops, compressed class ptrs, g1 gc, windows-amd64)
+# No core dump will be written. Minidumps are not enabled by default on client versions of Windows
+#
+
+---------------  S U M M A R Y ------------
+
+Command Line: -Djava.awt.headless=true -Djava.library.path=C:\Program Files\Android\Android Studio\jbr\bin;C:\WINDOWS\Sun\Java\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Microsoft VS Code\bin;%USERPROFILE%\AppData\Local\Muse Hub\lib;C:\Program Files\Microsoft SQL Server\170\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;C:\Program Files\dotnet\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;D:\Hakot App\Git\cmd;C:\Program Files\Git\cmd;C:\Program Files\WSL\;C:\Users\dell\AppData\Local\Programs\Python\Launcher\;C:\Users\dell\AppData\Local\Microsoft\WindowsApps;C:\Users\dell\.dotnet\tools;C:\Users\dell\AppData\Local\Muse Hub\lib;C:\Users\dell\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.8.3_Microsoft.Winget.Source_8wekyb3d8bbwe;C:\Users\dell\AppData\Local\Microsoft\WinGet\Links;.;D:\Hakot App\Hakot Android Studio\app\src\testDebug\jniLibs;D:\Hakot App\Hakot Android Studio\app\src\test\jniLibs -Dorg.gradle.internal.worker.tmpdir=D:\Hakot App\Hakot Android Studio\app\build\tmp\testDebugUnitTest\work --add-opens=java.base/java.io=ALL-UNNAMED -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -ea worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 10'
+
+Host: 11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 cores, 15G,  Windows 11 , 64 bit Build 26100 (10.0.26100.9711)
+Time: Mon Nov  9 15:27:45 2026 Malay Peninsula Standard Time elapsed time: 0.019290 seconds (0d 0h 0m 0s)
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x000001565ffc9fd0):  JavaThread "Unknown thread" [_thread_in_vm, id=28612, stack(0x0000005565e00000,0x0000005565f00000) (1024K)]
+
+Stack: [0x0000005565e00000,0x0000005565f00000]
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [jvm.dll+0x7bf039]  (no source info available)
+V  [jvm.dll+0x78912d]  (no source info available)
+V  [jvm.dll+0xa0e615]  (no source info available)
+V  [jvm.dll+0xa10c94]  (no source info available)
+V  [jvm.dll+0xa11393]  (no source info available)
+V  [jvm.dll+0x30a116]  (no source info available)
+V  [jvm.dll+0x7bb145]  (no source info available)
+V  [jvm.dll+0x7adc17]  (no source info available)
+V  [jvm.dll+0x3fea3b]  (no source info available)
+V  [jvm.dll+0x406bf6]  (no source info available)
+V  [jvm.dll+0x3f30a6]  (no source info available)
+V  [jvm.dll+0x3f3388]  (no source info available)
+V  [jvm.dll+0x3c8622]  (no source info available)
+V  [jvm.dll+0x3c943e]  (no source info available)
+V  [jvm.dll+0x9d36cf]  (no source info available)
+V  [jvm.dll+0x464f42]  (no source info available)
+V  [jvm.dll+0x9b74d2]  (no source info available)
+V  [jvm.dll+0x507b3e]  (no source info available)
+V  [jvm.dll+0x5093c1]  (no source info available)
+C  [jli.dll+0x5401]  (no source info available)
+C  [ucrtbase.dll+0x2cd30]  (no source info available)
+C  [KERNEL32.DLL+0x2dda7]  (no source info available)
+C  [ntdll.dll+0x7ee4c]  (no source info available)
+
+Lock stack of current Java thread (top to bottom):
+
+
+---------------  P R O C E S S  ---------------
+
+Threads class SMR info:
+_java_thread_list=0x00007fffbd4d1c08, length=0, elements={
+}
+
+Java Threads: ( => current thread )
+Total: 0
+
+Other Threads:
+  0x00000156622b2490 WorkerThread "GC Thread#0"                     [id=12720, stack(0x0000005565f00000,0x0000005566000000) (1024K)]
+  0x00000156622b3520 ConcurrentGCThread "G1 Main Marker"            [id=7384, stack(0x0000005566000000,0x0000005566100000) (1024K)]
+  0x00000156622b4fa0 WorkerThread "G1 Conc#0"                       [id=26376, stack(0x0000005566100000,0x0000005566200000) (1024K)]
+
+[error occurred during error reporting (printing all threads), id 0xc0000005, EXCEPTION_ACCESS_VIOLATION (0xc0000005) at pc=0x00007fffbcb4dbba]
+VM state: not at safepoint (not fully initialized)
+
+VM Mutex/Monitor currently owned by a thread:  ([mutex/lock_event])
+[0x00007fffbd557aa8] Heap_lock - owner thread: 0x000001565ffc9fd0
+
+Heap address: 0x00000000e0000000, size: 512 MB, Compressed Oops mode: 32-bit
+
+CDS archive(s) mapped at: [0x0000000000000000-0x0000000000000000-0x0000000000000000), size 0, SharedBaseAddress: 0x0000000800000000, ArchiveRelocationMode: 1.
+UseCompressedClassPointers 1, UseCompactObjectHeaders 0
+Narrow klass pointer bits 32, Max shift 3
+Narrow klass base: 0xffffffffffffffff, Narrow klass shift: -1
+Encoding Range: [0xffffffffffffffff - 0x000000007fffffff), (2147483648 bytes)
+Klass Range:    [0x0000000000000000 - 0x0000000000000000), (0 bytes)
+Klass ID Range:  [4294967295 - 0) (1)
+No protection zone.
+
+GC Precious Log:
+ CardTable entry size: 512
+ Card Set container configuration: InlinePtr #cards 5 size 8 Array Of Cards #cards 10 size 36 Howl #buckets 4 coarsen threshold 1843 Howl Bitmap #cards 512 size 80 coarsen threshold 460 Card regions per heap region 1 cards per card region 2048
+
+Heap:
+ garbage-first heap   total reserved 524288K, committed 0K, used 0K [0x00000000e0000000, 0x0000000100000000)
+  region size 1024K, 0 young (0K), 0 survivors (0K)
+
+Heap Regions: E=young(eden), S=young(survivor), O=old, HS=humongous(starts), HC=humongous(continues), CS=collection set, F=free, TAMS=top-at-mark-start, PB=parsable bottom
+
+Card table byte_map: [0x0000015674b80000,0x0000015674c80000] _byte_map_base: 0x0000015674480000
+
+Marking Bits: (CMBitMap*) 0x00000156622b2c20
+ Bits: [0x0000015674c80000, 0x0000015675480000)
+
+GC Heap Usage History (0 events):
+No events
+
+Metaspace Usage History (0 events):
+No events
+
+Dll operation events (1 events):
+Event: 0.013 Loaded shared library C:\Program Files\Android\Android Studio\jbr\bin\java.dll
+
+Deoptimization events (0 events):
+No events
+
+Classes loaded (0 events):
+No events
+
+Classes unloaded (0 events):
+No events
+
+Classes redefined (0 events):
+No events
+
+Internal exceptions (0 events):
+No events
+
+VM Operations (0 events):
+No events
+
+Memory protections (0 events):
+No events
+
+Nmethod flushes (0 events):
+No events
+
+Events (0 events):
+No events
+
+
+Dynamic libraries:
+0x00007ff60e9f0000 - 0x00007ff60e9fa000 	C:\Program Files\Android\Android Studio\jbr\bin\java.exe
+0x00007ff8571c0000 - 0x00007ff857428000 	C:\WINDOWS\SYSTEM32\ntdll.dll
+0x00007ff855f70000 - 0x00007ff85603b000 	C:\WINDOWS\System32\KERNEL32.DLL
+0x00007ff8545f0000 - 0x00007ff8549f1000 	C:\WINDOWS\System32\KERNELBASE.dll
+0x00007ff854cb0000 - 0x00007ff854dfc000 	C:\WINDOWS\System32\ucrtbase.dll
+0x00007ff825980000 - 0x00007ff825996000 	C:\Program Files\Android\Android Studio\jbr\bin\jli.dll
+0x00007ff83ef20000 - 0x00007ff83ef3b000 	C:\Program Files\Android\Android Studio\jbr\bin\VCRUNTIME140.dll
+0x00007ff8551a0000 - 0x00007ff855377000 	C:\WINDOWS\System32\USER32.dll
+0x00007ff854a90000 - 0x00007ff854ab7000 	C:\WINDOWS\System32\win32u.dll
+0x00007ff856dd0000 - 0x00007ff856dfb000 	C:\WINDOWS\System32\GDI32.dll
+0x00007ff837d60000 - 0x00007ff837ff1000 	C:\WINDOWS\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9711_none_3e07b8b0e334e825\COMCTL32.dll
+0x00007ff854ac0000 - 0x00007ff854bea000 	C:\WINDOWS\System32\gdi32full.dll
+0x00007ff855460000 - 0x00007ff855509000 	C:\WINDOWS\System32\msvcrt.dll
+0x00007ff854540000 - 0x00007ff8545e3000 	C:\WINDOWS\System32\msvcp_win.dll
+0x00007ff854ff0000 - 0x00007ff855021000 	C:\WINDOWS\System32\IMM32.DLL
+0x00007ff8429a0000 - 0x00007ff8429ac000 	C:\Program Files\Android\Android Studio\jbr\bin\vcruntime140_1.dll
+0x00007ff823b10000 - 0x00007ff823b9d000 	C:\Program Files\Android\Android Studio\jbr\bin\msvcp140.dll
+0x00007fffbc770000 - 0x00007fffbd64d000 	C:\Program Files\Android\Android Studio\jbr\bin\server\jvm.dll
+0x00007ff855380000 - 0x00007ff85543c000 	C:\WINDOWS\System32\ADVAPI32.dll
+0x00007ff856fa0000 - 0x00007ff857048000 	C:\WINDOWS\System32\sechost.dll
+0x00007ff855510000 - 0x00007ff855628000 	C:\WINDOWS\System32\RPCRT4.dll
+0x00007ff8563d0000 - 0x00007ff856451000 	C:\WINDOWS\System32\WS2_32.dll
+0x00007ff8401c0000 - 0x00007ff8401cb000 	C:\WINDOWS\SYSTEM32\VERSION.dll
+0x00007ff854200000 - 0x00007ff85425e000 	C:\WINDOWS\SYSTEM32\POWRPROF.dll
+0x00007ff848960000 - 0x00007ff848997000 	C:\WINDOWS\SYSTEM32\WINMM.dll
+0x00007ff8541d0000 - 0x00007ff8541e5000 	C:\WINDOWS\SYSTEM32\UMPDC.dll
+0x00007ff853010000 - 0x00007ff85302b000 	C:\WINDOWS\SYSTEM32\kernel.appcore.dll
+0x00007ff842470000 - 0x00007ff84247a000 	C:\Program Files\Android\Android Studio\jbr\bin\jimage.dll
+0x00007ff851870000 - 0x00007ff851abc000 	C:\WINDOWS\SYSTEM32\DBGHELP.DLL
+0x00007ff856040000 - 0x00007ff8563cb000 	C:\WINDOWS\System32\combase.dll
+0x00007ff857050000 - 0x00007ff857129000 	C:\WINDOWS\System32\OLEAUT32.dll
+0x00007ff8308d0000 - 0x00007ff83090b000 	C:\WINDOWS\SYSTEM32\dbgcore.DLL
+0x00007ff854bf0000 - 0x00007ff854c9c000 	C:\WINDOWS\System32\bcryptPrimitives.dll
+0x00007ff83de00000 - 0x00007ff83de1e000 	C:\Program Files\Android\Android Studio\jbr\bin\java.dll
+0x00007ff856e00000 - 0x00007ff856f9a000 	C:\WINDOWS\System32\ole32.dll
+0x00007ff856620000 - 0x00007ff856dbc000 	C:\WINDOWS\System32\SHELL32.dll
+
+JVMTI agents: none
+
+dbghelp: loaded successfully - version: 4.0.5 - missing functions: none
+symbol engine: initialized successfully - sym options: 0x614 - pdb path: .;C:\Program Files\Android\Android Studio\jbr\bin;C:\WINDOWS\SYSTEM32;C:\WINDOWS\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.9711_none_3e07b8b0e334e825;C:\Program Files\Android\Android Studio\jbr\bin\server
+
+VM Arguments:
+jvm_args: -Djava.awt.headless=true -Djava.library.path=C:\Program Files\Android\Android Studio\jbr\bin;C:\WINDOWS\Sun\Java\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Microsoft VS Code\bin;%USERPROFILE%\AppData\Local\Muse Hub\lib;C:\Program Files\Microsoft SQL Server\170\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;C:\Program Files\dotnet\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;D:\Hakot App\Git\cmd;C:\Program Files\Git\cmd;C:\Program Files\WSL\;C:\Users\dell\AppData\Local\Programs\Python\Launcher\;C:\Users\dell\AppData\Local\Microsoft\WindowsApps;C:\Users\dell\.dotnet\tools;C:\Users\dell\AppData\Local\Muse Hub\lib;C:\Users\dell\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.8.3_Microsoft.Winget.Source_8wekyb3d8bbwe;C:\Users\dell\AppData\Local\Microsoft\WinGet\Links;.;D:\Hakot App\Hakot Android Studio\app\src\testDebug\jniLibs;D:\Hakot App\Hakot Android Studio\app\src\test\jniLibs -Dorg.gradle.internal.worker.tmpdir=D:\Hakot App\Hakot Android Studio\app\build\tmp\testDebugUnitTest\work --add-opens=java.base/java.io=ALL-UNNAMED -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Duser.variant -ea 
+java_command: worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 10'
+java_class_path (initial): C:\Users\dell\.gradle\caches\9.6.0\workerMain\gradle-worker.jar;D:\Hakot App\Hakot Android Studio\app\build\intermediates\built_in_kotlinc\debugUnitTest\compileDebugUnitTestKotlin\classes;D:\Hakot App\Hakot Android Studio\app\build\intermediates\java_res\debugUnitTest\processDebugUnitTestJavaRes\out;D:\Hakot App\Hakot Android Studio\app\build\intermediates\runtime_app_classes_jar\debug\bundleDebugClassesToRuntimeJar\classes.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\junit\junit\4.13.2\8ac9e16d933b6fb43bc7f576336b8f4d7eb5ba12\junit-4.13.2.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\cfe2036511bd43cf10eed521b8d56157\transformed\android-sdk-11.7.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\7e61b2992442cb477d9911b3e4f41cf1\transformed\play-services-location-21.3.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\adee9a9424d306a91f9f54fc8b07d088\transformed\maps-compose-6.3.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\fcc401e6a1d3468660dab1f786d340f0\transformed\maps-ktx-5.1.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\7ebbc0a40356a9e90dce5bc21d60567c\transformed\play-services-maps-19.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\aefe9319c8adb5251ae6ebe68fd44607\transformed\play-services-base-18.5.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\5afdc7bc55988925eaf12ea54df01ab7\transformed\play-services-tasks-18.2.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\52f1fc578ebf81b7e0e2898def247b02\transformed\play-services-basement-18.4.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ea812568245664cdbfdc4b4db20469b0\transformed\fragment-1.8.2-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\688de9d20a464b0a143fd33330afdf57\transformed\material3-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ff9e40240018b394b6db9b4a8d89c126\transformed\material-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\209d2d28255399050eb6f2d3e17cee2b\transformed\animation-core-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0bdfe8b993f1277c797af5e6e75979cc\transformed\material-ripple-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\9b45f5c2694fb7616f4cb594fafade8d\transformed\animation-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\055c8f603836916814a5808c3b4352f8\transformed\foundation-layout-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c11cee21cde89736380dbe567c05aadb\transformed\foundation-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d3e8907c7c7cffad36e5f471851391fc\transformed\ui-tooling-data-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b162470f07682d094d6dd596d0d76720\transformed\ui-unit-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\fa155653d51f652cc3499c4c7f4320fa\transformed\ui-geometry-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\19dba3b3443b1b3b4f6b58879b7361b3\transformed\ui-util-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\1f0597225263a89c1058fbee6604e2be\transformed\ui-text-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ed8be3896041167e7c25426086211f58\transformed\ui-tooling-preview-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\dde7938b4b5bb702d628536ecd9ed579\transformed\ui-tooling-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\28a18ae60fa0ae6ffdda89ab166da037\transformed\ui-graphics-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\07b083781174f82c9013b7e296d732c4\transformed\navigationevent-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\735cb004268c98495c1639e390582ae9\transformed\navigationevent-compose-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\767ce116e7f17ad7055bd651b8824f63\transformed\transition-1.6.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0f4f9079e060936481ad6592b70f6a55\transformed\dynamicanimation-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d38ce1a4c614e1afd50cdfd43cc987a7\transformed\legacy-support-core-utils-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\15fd8627664abc99b3e05b35d2a3b453\transformed\loader-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\82b79b8dbb710a5a5a859dd664b3f81b\transformed\activity-ktx-1.13.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\e8e0727257534bf9287bbc84e76ce430\transformed\maplibre-android-gestures-0.0.3-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0e95f10ea9cee7c5483c5748c4d8702d\transformed\customview-poolingcontainer-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d4ed910dcf482e84402ff4afff255b56\transformed\emoji2-1.4.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\549f2f161fbd92aabcfbcce6bff64557\transformed\lifecycle-process-2.11.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\499256a33c6dc2475e7ef6d16fe565d2\transformed\lifecycle-livedata-core-ktx-2.11.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\3fdb6731a887eb1ba49092e8c7681d3d\transformed\lifecycle-viewmodel-2.11.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ef6729895c13f3b713f61b6f402293ed\transformed\lifecycle-viewmodel-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\9bd171137ac8d10e6e37f4c2f8d3d55b\transformed\runtime-retain-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\202393369aaca967e9ddd68411400991\transformed\runtime-annotation-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\2bb2a3d54f85427438d7e1293f901717\transformed\runtime-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\600b852cde9a9eb062a8d3ded2b70c17\transformed\runtime-saveable-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\82c1a9e02f9ef729fe5de370c563e1a8\transformed\savedstate-compose-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\842873c2ba5599538df5b2fa7d166774\transformed\savedstate-ktx-1.4.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b2e763cb89307d8aa1af8cc06c36a46b\transformed\savedstate-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.lifecycle\lifecycle-common-jvm\2.11.0\2c4f7d92f1fd723121d394c93455f50158403ad9\lifecycle-common-jvm-2.11.0.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\736212136a90c4a4203d8d50c4f41bef\transformed\lifecycle-viewmodel-savedstate-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\79cee8613375c2968ec379681f68a4c0\transformed\core-ktx-1.19.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\93a3e64435b7c3ddb3ec13796f053f85\transformed\viewpager-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\8529a7d15dafdaef45a2273a43e8a7a4\transformed\customview-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\57025a097f5ab095e9b04cf85d5a8b9e\transformed\autofill-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ba952a0cac95f0921dd9e1969a73b3b2\transformed\window-core-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\206fe4cd496cc64e4cb950c119ce1386\transformed\window-1.5.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\f823a9fbe192955f1be3ff064d1a8e0a\transformed\graphics-path-1.0.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\75b78ef57d919f8f437ec1aaf3668d77\transformed\core-1.19.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\53fb79ff780ecfc4897116f589903035\transformed\lifecycle-runtime-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\76b233347ec81aa2e52b7567aebd2eef\transformed\lifecycle-viewmodel-ktx-2.11.0-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.lifecycle\lifecycle-common-java8\2.11.0\9d9c098b5dc3bbcdce8ec4495991b9b0ee25606e\lifecycle-common-java8-2.11.0.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\5d442c6eaefce0dbc577bcec3767bcab\transformed\lifecycle-livedata-2.11.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\cf64d43cfeb66aa2f362f30775c75de4\transformed\lifecycle-livedata-core-2.11.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\179cb1e552f8aae04d870bd78cce8505\transformed\lifecycle-runtime-ktx-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d030938d85a7df949bac7cb40ce03c96\transformed\lifecycle-runtime-compose-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d620149a1324c95e545de177360f62b8\transformed\material-icons-extended-release-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0550fe8718cde6bf1f3f8a64e164c79f\transformed\material-icons-core-release-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\53e958a8ed74552292e54972e3939d52\transformed\ui-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ceafd6c3006e9753119a00b6b22886e9\transformed\ui-test-manifest-1.10.4-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\e039afe667c40821157431a17bf799a6\transformed\activity-1.13.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c8261a40004917c08f49919e364480a3\transformed\activity-compose-1.13.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\859b272e5c94b5aa8fc108ab1cd9c4fd\transformed\timber-5.0.1-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains.kotlinx\kotlinx-coroutines-core-jvm\1.9.0\9beade4c1c1569e4f36cbd2c37e02e3e41502601\kotlinx-coroutines-core-jvm-1.9.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains.kotlinx\kotlinx-coroutines-android\1.9.0\6cf3b8df5a2ce8c6b0dffe55657a827c405ee2fe\kotlinx-coroutines-android-1.9.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\com.squareup.okhttp3\okhttp\4.12.0\2f4525d4a200e97e1b87449c2cd9bd2e25b7e8cd\okhttp-4.12.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\com.squareup.okio\okio-jvm\3.6.0\5600569133b7bdefe1daf9ec7f4abeb6d13e1786\okio-jvm-3.6.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains.kotlin\kotlin-stdlib-jdk8\1.9.10\c7510d64a83411a649c76f2778304ddf71d7437b\kotlin-stdlib-jdk8-1.9.10.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains.kotlin\kotlin-stdlib-jdk7\2.0.21\222b2be42672d47c002c1b22ac9f030d781fc5db\kotlin-stdlib-jdk7-2.0.21.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b7960798b57eaf2c7886c837f37be14e\transformed\core-viewtree-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\3d46179ebf92a1229a461e76a5070261\transformed\annotation-experimental-1.4.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\518001ecb9d9759c6a6929124f2e1eff\transformed\interpolator-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\7f459774588e43586e11171de95a0613\transformed\profileinstaller-1.4.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c979ac3b778079d4c967085231ad178c\transformed\viewbinding-8.4.2-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\8727f4a8e1b7951d831bbf32ff05837b\transformed\startup-runtime-1.1.1-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\9a317c628017277cd58d3acd89378542\transformed\tracing-1.2.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\f8c01b897a08f1affcb067bcfcd20d89\transformed\versionedparcelable-1.1.1-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.concurrent\concurrent-futures\1.1.0\50b7fb98350d5f42a4e49704b03278542293ba48\concurrent-futures-1.1.0.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\29aae9a599d41e846097819016e032be\transformed\core-runtime-2.2.0-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.arch.core\core-common\2.2.0\5e1b8b81dfd5f52c56a8d53b18ca759c19a301f3\core-common-2.2.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.collection\collection-ktx\1.5.0\27c78a926a16a1bf792b2285cf2834e8caae4a07\collection-ktx-1.5.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.collection\collection-jvm\1.5.0\7ba2c69414d46ebc2dd76598bdd0a75c54281a57\collection-jvm-1.5.0.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\556a3517c4503430b9aed51bbdbad5c6\transformed\documentfile-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\7b40a33c395434c33f25ba3b809e3424\transformed\localbroadcastmanager-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\e76f4a41ced8e3c78606316252845c01\transformed\print-1.0.0-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\androidx.annotation\annotation-jvm\1.10.0\388cfaa79001d0f024d28f6a13d5a3dfc2f0e18f\annotation-jvm-1.10.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains.kotlinx\kotlinx-serialization-core-jvm\1.7.3\1f226780b845ff9206474c05159245d861556249\kotlinx-serialization-core-jvm-1.7.3.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains.kotlin\kotlin-stdlib\2.2.10\30de6faa127a4a012db8e71bf1b9c0a99b1402b2\kotlin-stdlib-2.2.10.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\933022b5ce9747ab5adcb9234f0fa49c\transformed\osmdroid-android-6.1.20-runtime.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.hamcrest\hamcrest-core\1.3\42a25dc3219429f0e5d060061f71acb49bf010a0\hamcrest-core-1.3.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jetbrains\annotations\23.0.0\8cc20c07506ec18e0834947b84a864bfc094484e\annotations-23.0.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.maplibre.gl\android-sdk-turf\6.0.1\394851f55221cae098ea80dbcba615a5577e6429\android-sdk-turf-6.0.1.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.maplibre.gl\android-sdk-geojson\6.0.1\256e046d9f5756f2ce2e70110741b025bf3080f0\android-sdk-geojson-6.0.1.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\com.google.code.gson\gson\2.10.1\b3add478d4382b78ea20b1671390a858002feb6c\gson-2.10.1.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\com.google.guava\listenablefuture\1.0\c949a840a6acbc5268d088e47b04177bf90b3cad\listenablefuture-1.0.jar;C:\Users\dell\.gradle\caches\modules-2\files-2.1\org.jspecify\jspecify\1.0.0\7425a601c1c7ec76645a78d22b8c6a627edee507\jspecify-1.0.0.jar;D:\Hakot App\Hakot Android Studio\app\build\intermediates\java_res\debug\processDebugJavaRes\out;C:\Users\dell\.gradle\caches\9.6.0\transforms\015b81cb6cd021d0c9df41957edf7692\transformed\android-sdk-11.7.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\aa7570ad25759c42fb04d25ded6dedfb\transformed\play-services-location-21.3.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\cb09dd4c585de22dc9d3824fbb3ddff1\transformed\maps-compose-6.3.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\2507dbc8cba67528587599ff31f697a9\transformed\maps-ktx-5.1.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d3f7c97dc692068700f48cc4dfc3370d\transformed\play-services-maps-19.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\fbd63ec8af859a51742dc3bde4bfc9ba\transformed\play-services-base-18.5.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\6ebf84c203c00a27630800885dbafabd\transformed\play-services-tasks-18.2.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\4119e6d12d022992bd7ce24cbf952bb8\transformed\play-services-basement-18.4.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\3f7cfe7eed16c0e49dee2c316107810c\transformed\fragment-1.8.2\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0af32a84e519aed562d3741488d9d893\transformed\material3\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b64e5ccac257d942624d443fc46017e6\transformed\material\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\80d3d88926bae290c43a292d1d113659\transformed\animation-core\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0d63c7cbd7b9a7719cb7078c8d48f8d9\transformed\material-ripple\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\e26f7f89fd56ab7f53dd99152423a358\transformed\animation\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ff7bf067b964625c7d9f5885726e8414\transformed\foundation-layout\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\deaa3d48138795576bf850356063f7f0\transformed\foundation\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\2a58ec9281875dc461d2526192f41b93\transformed\ui-tooling-data\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\3ca947c5dd6a165434ae2589264ab1f1\transformed\ui-unit\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\320acebf3e60fdad6bafdf14fcc8cda1\transformed\ui-geometry\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c79f77614e98a858195cf4d147a96848\transformed\ui-util\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\bf48589775f4d9bf05ef96fea4e9002f\transformed\ui-text\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\40d5c7b2ac0f8fb42f3e9804c1d53992\transformed\ui-tooling-preview\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\7629ca5cf6992d4d9bd57362deb23084\transformed\ui-tooling\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\651fb9f911be56b181451e24aef4cf2c\transformed\ui-graphics\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\e557602c052500eb4249f961cac31232\transformed\navigationevent\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\e8d5025c79f319a28666372681fa52ce\transformed\navigationevent-compose\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\919919b97deed5b08d1d03c064f59fec\transformed\transition-1.6.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\bc9bf640f9411a8971ec750ec284b969\transformed\dynamicanimation-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b5531153bbc79de8e547849000c690cc\transformed\legacy-support-core-utils-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\32307a11ae21ba3bc77f1a1c697a5e84\transformed\loader-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\235a4459ee25ca55e50e755cd60e512b\transformed\activity-ktx-1.13.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c8bdfc094134688cdb9a290a2b9a478c\transformed\maplibre-android-gestures-0.0.3\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\cd156d193524c8e4cc8156722dbf4fd4\transformed\customview-poolingcontainer-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\19e50b0eaa0d75ae4dd1646d10b093a1\transformed\emoji2-1.4.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\19e50b0eaa0d75ae4dd1646d10b093a1\transformed\emoji2-1.4.0\jars\libs\repackaged.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d2e508606ffc99da7f0f5af4708b6a35\transformed\lifecycle-process-2.11.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\6c35f81206a35662edc7815926661e64\transformed\lifecycle-livedata-core-ktx-2.11.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\f6d0312d0bdf814117b9d223a06fd55c\transformed\lifecycle-viewmodel-2.11.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\192364ee5217ddafc5e7ac9f619567ff\transformed\lifecycle-viewmodel\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d0d32274925c5f12b51f96b6baa46553\transformed\runtime-retain\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\858df6127668f32294d1831eae662d80\transformed\runtime-annotation\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\5d28acbc609adcd12d634023181f4ca7\transformed\runtime\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\9236abf7c7f8babe5b8c905d0055763e\transformed\runtime-saveable\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\1fe4060785ad42fa2b50471cf5710721\transformed\savedstate-compose\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c13d591e90b5022c548bb67d91138cab\transformed\savedstate-ktx-1.4.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ab9cb7c461b297c30b49f6116866405d\transformed\savedstate\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\f9c55139dd97ba5d8232b3e589d6f981\transformed\lifecycle-viewmodel-savedstate\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\5f8ec68f57b11744fb04c009338ebef7\transformed\core-ktx-1.19.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\2f8ac4b2b8e7752f4d9c7b19d3d824e2\transformed\viewpager-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\82d51daaf338a2268fae0a1d6678d5b9\transformed\customview-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b3e408265e3f954234740982a826c6af\transformed\autofill-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\2013a819ef94d3eb6d86198cb42a472c\transformed\window-core\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\2874a5720787e7542c464c6eec18ea97\transformed\window-1.5.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b32167c9cb25757c2bc23341aea15f03\transformed\graphics-path-1.0.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\9157efedeaee73dd79970c65ab8a932c\transformed\core-1.19.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\a95339eb07fbf577ad6ed4b96f13fedd\transformed\lifecycle-runtime\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\30c3996812687cf89b919e97e8191a8c\transformed\lifecycle-viewmodel-ktx-2.11.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\797cde2b987f8c466e2669fb0b96b6f1\transformed\lifecycle-livedata-2.11.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\03918f1c60ee2706d7ee8d6918a18ead\transformed\lifecycle-livedata-core-2.11.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\66e9f6cc776fd0215d25d08f3425239d\transformed\lifecycle-runtime-ktx\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\ff004f78b0346b83ffbfa7db44fdd54e\transformed\lifecycle-runtime-compose\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\b96fc7a379e17c7b01713a9845722b65\transformed\material-icons-extended-release\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\3c7f6be1f27c89212f4f1a5bd1e957c9\transformed\material-icons-core-release\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\405b87392ef66f07ff360d063d923483\transformed\ui\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\6b022e559ac8a79cdd1719be30cc9be3\transformed\ui-test-manifest-1.10.4\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c73e1993837614fe4138c853a2603e16\transformed\activity-1.13.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\27b02364c40cbccc842c8bee30e27eb2\transformed\activity-compose-1.13.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\4ce0b4f6cd7ffc1908d1cebe881746af\transformed\timber-5.0.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\cd054acb7a106691abc3cd3e9c3f0807\transformed\core-viewtree-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0fe81204549206eedc6e73db965b6290\transformed\annotation-experimental-1.4.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\401152ca8016efcd68fe1abc96518cd8\transformed\interpolator-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\47a5f8f593c6544c16b13fb8b120bcc6\transformed\profileinstaller-1.4.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\d88d23ef2b45db205da932b9422791d3\transformed\viewbinding-8.4.2\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\26d209cd83d3d79dc88e7af45e26e59e\transformed\startup-runtime-1.1.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\fcb971fcd5dec505c5227b00650655f1\transformed\tracing-1.2.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0482919278486d3ff8cb78c0a22d70f6\transformed\versionedparcelable-1.1.1\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\be0dbb943dcdb669808f0b3af9cf8dff\transformed\core-runtime-2.2.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\1d6b90bb3d90b03a760353098fdddf1f\transformed\documentfile-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c3eeeb704ce05795920aa90d75c9244c\transformed\localbroadcastmanager-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\0ea2de5cff2e05cef595d793747ca4ae\transformed\print-1.0.0\jars\classes.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\151dce8224038db1d26929180aefe1de\transformed\osmdroid-android-6.1.20\jars\classes.jar;D:\Hakot App\Hakot Android Studio\app\build\intermediates\compile_and_runtime_r_class_jar\debug\processDebugResources\R.jar;C:\Users\dell\.gradle\caches\9.6.0\transforms\c6839f8890c0fdc9afc37909ec1d0a0f\transformed\android.jar
+Launcher Type: SUN_STANDARD
+
+[Global flags]
+     intx CICompilerCount                          = 4                                         {product} {ergonomic}
+     uint ConcGCThreads                            = 2                                         {product} {ergonomic}
+     uint G1ConcRefinementThreads                  = 8                                         {product} {ergonomic}
+   size_t G1HeapRegionSize                         = 1048576                                   {product} {ergonomic}
+   size_t InitialHeapSize                          = 260046848                                 {product} {ergonomic}
+   size_t MarkStackSize                            = 4194304                                   {product} {ergonomic}
+   size_t MarkStackSizeMax                         = 536870912                                 {product} {ergonomic}
+   size_t MaxHeapSize                              = 536870912                                 {product} {command line}
+   size_t MinHeapDeltaBytes                        = 1048576                                   {product} {ergonomic}
+   size_t MinHeapSize                              = 8388608                                   {product} {ergonomic}
+    uintx NonNMethodCodeHeapSize                   = 5898240                                {pd product} {ergonomic}
+    uintx NonProfiledCodeHeapSize                  = 122945536                              {pd product} {ergonomic}
+    uintx ProfiledCodeHeapSize                     = 122945536                              {pd product} {ergonomic}
+    uintx ReservedCodeCacheSize                    = 251789312                              {pd product} {ergonomic}
+     bool SegmentedCodeCache                       = true                                      {product} {ergonomic}
+   size_t SoftMaxHeapSize                          = 536870912                              {manageable} {ergonomic}
+     bool UseCompressedOops                        = true                           {product lp64_product} {ergonomic}
+     bool UseG1GC                                  = true                                      {product} {ergonomic}
+     bool UseLargePagesIndividualAllocation        = false                                  {pd product} {ergonomic}
+
+Logging:
+Log output configuration:
+ #0: stdout all=warning uptime,level,tags foldmultilines=false
+ #1: stderr all=off uptime,level,tags foldmultilines=false
+
+Release file:
+<release file has not been read>
+Environment Variables:
+PATH=C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Microsoft VS Code\bin;%USERPROFILE%\AppData\Local\Muse Hub\lib;C:\Program Files\Microsoft SQL Server\170\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;C:\Program Files\dotnet\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;D:\Hakot App\Git\cmd;C:\Program Files\Git\cmd;C:\Program Files\WSL\;C:\Users\dell\AppData\Local\Programs\Python\Launcher\;C:\Users\dell\AppData\Local\Microsoft\WindowsApps;C:\Users\dell\.dotnet\tools;C:\Users\dell\AppData\Local\Muse Hub\lib;C:\Users\dell\AppData\Local\Microsoft\WinGet\Packages\PHP.PHP.8.3_Microsoft.Winget.Source_8wekyb3d8bbwe;C:\Users\dell\AppData\Local\Microsoft\WinGet\Links
+USERNAME=dell
+OS=Windows_NT
+PROCESSOR_IDENTIFIER=Intel64 Family 6 Model 140 Stepping 1, GenuineIntel
+TMP=C:\Users\dell\AppData\Local\Temp
+TEMP=C:\Users\dell\AppData\Local\Temp
+
+
+
+
+Compilation memory statistics disabled.
+
+Periodic native trim disabled
+
+JNI global refs:
+JNI global refs: 0, weak refs: 0
+
+JNI global refs memory usage: 0, weak refs: 0
+
+Process memory usage:
+Resident Set Size: 14468K (0% of 16139652K total physical memory with 334528K free physical memory)
+
+OOME stack traces (most recent first):
+Classloader memory used:
+
+---------------  S Y S T E M  ---------------
+
+OS:
+ Windows 11 , 64 bit Build 26100 (10.0.26100.9711)
+OS uptime: 2 days 23:49 hours
+Hyper-V role detected
+
+CPU: total 8 (initial active 8) (4 cores per cpu, 2 threads per core) family 6 model 140 stepping 1 microcode 0xbe, cx8, cmov, fxsr, ht, mmx, 3dnowpref, sse, sse2, sse3, ssse3, sse4.1, sse4.2, popcnt, lzcnt, tsc, tscinvbit, avx, avx2, aes, erms, clmul, bmi1, bmi2, adx, avx512f, avx512dq, avx512cd, avx512bw, avx512vl, sha, fma, vzeroupper, avx512_vpopcntdq, avx512_vpclmulqdq, avx512_vaes, avx512_vnni, clflush, clflushopt, clwb, avx512_vbmi2, avx512_vbmi, hv, rdtscp, rdpid, fsrm, gfni, avx512_bitalg, f16c, cet_ibt, cet_ss, avx512_ifma
+Processor Information for the first 8 processors :
+  Max Mhz: 1805, Current Mhz: 1805, Mhz Limit: 1805
+
+Memory: 4k page, system-wide physical 15761M (326M free)
+TotalPageFile size 26951M (AvailPageFile size 183M)
+current process WorkingSet (physical memory assigned to process): 14M, peak: 14M
+current process commit charge ("private bytes"): 60M, peak: 308M
+
+vm_info: OpenJDK 64-Bit Server VM (25.0.3+-15898627-b508.16) for windows-amd64 JRE (25.0.3+-15898627-b508.16), built on 2026-07-20T17:54:23Z with MS VC++ 16.10 / 16.11 (VS2019)
+
+END.
