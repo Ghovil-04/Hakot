@@ -12,6 +12,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.regex.Pattern
 
 data class SupabaseFetchResult(
     val isSuccess: Boolean,
@@ -42,6 +43,13 @@ object SupabaseClient {
     var lastSyncTimestamp: String by mutableStateOf("Not Synced Yet")
     var gisLoadError: String by mutableStateOf("")
 
+    private val uuidPattern = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+    private fun isValidUuid(id: String): Boolean {
+        if (id.isBlank()) return false
+        return uuidPattern.matcher(id).matches()
+    }
+
     private fun currentTimeString(): String {
         return SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
     }
@@ -49,8 +57,53 @@ object SupabaseClient {
     private fun readErrorStream(conn: HttpURLConnection): String {
         return try {
             conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "No error details"
-        } catch (e: Exception) {
-            e.message ?: "Failed to read error stream"
+        } catch (_: Exception) {
+            "Failed to read error stream"
+        }
+    }
+
+    private fun parseAuthResponse(jsonText: String): AuthTokenResponse? {
+        try {
+            val json = JSONObject(jsonText)
+            val accessToken = json.optString("access_token")
+            val refreshToken = json.optString("refresh_token")
+            
+            // Strict expires_in validation without type coercion from strings or fractional values
+            if (!json.has("expires_in") || json.isNull("expires_in")) return null
+            val expiresVal = json.get("expires_in")
+            
+            val expiresIn: Long = when (expiresVal) {
+                is Int -> expiresVal.toLong()
+                is Long -> expiresVal
+                is Number -> {
+                    val d = expiresVal.toDouble()
+                    if (d % 1.0 != 0.0) return null // Reject fractional values
+                    d.toLong()
+                }
+                else -> return null // Reject Strings, booleans, null, non-numeric values
+            }
+
+            if (expiresIn <= 0 || expiresIn > 604800) return null
+
+            val userObj = json.optJSONObject("user")
+            val userId = userObj?.optString("id") ?: ""
+
+            if (accessToken.isBlank() || refreshToken.isBlank()) return null
+            if (!isValidUuid(userId)) return null
+
+            // Safe expiry timestamp calculation avoiding overflow
+            val maxDelta = 604800_000L
+            val safeDelta = minOf(expiresIn * 1000, maxDelta)
+            val expiresAt = System.currentTimeMillis() + safeDelta
+
+            return AuthTokenResponse(
+                accessToken = accessToken,
+                refreshToken = refreshToken,
+                expiresAt = expiresAt,
+                userId = userId
+            )
+        } catch (_: Exception) {
+            return null
         }
     }
 
@@ -60,6 +113,7 @@ object SupabaseClient {
 
     suspend fun signIn(emailInput: String, passwordInput: String): AuthTokenResponse? =
         withContext(Dispatchers.IO) {
+            if (emailInput.isBlank() || passwordInput.isBlank()) return@withContext null
             var connection: HttpURLConnection? = null
             try {
                 val urlString = "$SUPABASE_URL/auth/v1/token?grant_type=password"
@@ -81,19 +135,9 @@ object SupabaseClient {
                 val code = connection.responseCode
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(jsonText)
-                    val accessToken = json.optString("access_token")
-                    val refreshToken = json.optString("refresh_token")
-                    val expiresIn = json.optLong("expires_in", 3600)
-                    val userObj = json.optJSONObject("user")
-                    val userId = userObj?.optString("id") ?: ""
-
-                    if (accessToken.isNotBlank() && userId.isNotBlank()) {
-                        return@withContext AuthTokenResponse(accessToken, refreshToken, System.currentTimeMillis() + expiresIn * 1000, userId)
-                    }
+                    return@withContext parseAuthResponse(jsonText)
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
             } finally {
                 connection?.disconnect()
             }
@@ -102,6 +146,7 @@ object SupabaseClient {
 
     suspend fun refreshSession(refreshTokenInput: String): AuthTokenResponse? =
         withContext(Dispatchers.IO) {
+            if (refreshTokenInput.isBlank()) return@withContext null
             var connection: HttpURLConnection? = null
             try {
                 val urlString = "$SUPABASE_URL/auth/v1/token?grant_type=refresh_token"
@@ -122,19 +167,9 @@ object SupabaseClient {
                 val code = connection.responseCode
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(jsonText)
-                    val accessToken = json.optString("access_token")
-                    val refreshToken = json.optString("refresh_token")
-                    val expiresIn = json.optLong("expires_in", 3600)
-                    val userObj = json.optJSONObject("user")
-                    val userId = userObj?.optString("id") ?: ""
-
-                    if (accessToken.isNotBlank() && userId.isNotBlank()) {
-                        return@withContext AuthTokenResponse(accessToken, refreshToken, System.currentTimeMillis() + expiresIn * 1000, userId)
-                    }
+                    return@withContext parseAuthResponse(jsonText)
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
             } finally {
                 connection?.disconnect()
             }
@@ -143,6 +178,7 @@ object SupabaseClient {
 
     suspend fun signOutRemote(accessToken: String): Boolean =
         withContext(Dispatchers.IO) {
+            if (accessToken.isBlank()) return@withContext false
             var connection: HttpURLConnection? = null
             try {
                 val urlString = "$SUPABASE_URL/auth/v1/logout"
@@ -154,8 +190,7 @@ object SupabaseClient {
                     readTimeout = 5000
                 }
                 return@withContext connection.responseCode in 200..299
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
                 false
             } finally {
                 connection?.disconnect()
@@ -164,6 +199,9 @@ object SupabaseClient {
 
     suspend fun fetchProfile(userId: String, accessToken: String): JSONObject? =
         withContext(Dispatchers.IO) {
+            if (userId.isBlank() || accessToken.isBlank()) return@withContext null
+            if (!isValidUuid(userId)) return@withContext null
+
             var connection: HttpURLConnection? = null
             try {
                 val urlString = "$SUPABASE_URL/rest/v1/profiles?id=eq.$userId&select=*"
@@ -179,12 +217,16 @@ object SupabaseClient {
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
                     val arr = JSONArray(jsonText)
-                    if (arr.length() > 0) {
-                        return@withContext arr.getJSONObject(0)
+                    // Strict verification: exactly one profile row must match authenticated user ID
+                    if (arr.length() == 1) {
+                        val profileObj = arr.getJSONObject(0)
+                        val profileId = profileObj.optString("id")
+                        if (profileId == userId && isValidUuid(profileId)) {
+                            return@withContext profileObj
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
             } finally {
                 connection?.disconnect()
             }
@@ -228,112 +270,19 @@ object SupabaseClient {
     }
 
     // ---------------------------------------------------------
-    // TEST LIVE READ AND WRITE (STRICT READ-BACK VERIFICATION)
+    // EXPLICIT PUBLIC ANONYMOUS FETCH
     // ---------------------------------------------------------
 
-    suspend fun testLiveReadWrite(): Pair<Boolean, String> =
-        withContext(Dispatchers.IO) {
-            var writeConn: HttpURLConnection? = null
-            var readConn: HttpURLConnection? = null
-
-            try {
-                connectionState = "Synchronizing Read/Write..."
-                val testId = "aud_test_${System.currentTimeMillis() % 10000}"
-
-                // 1. WRITE TEST
-                val writeUrl = "$SUPABASE_URL/rest/v1/audit_logs"
-                val writePayload = JSONObject().apply {
-                    put("id", testId)
-                    put("acting_user_email", "test.android@hakot.gov.ph")
-                    put("action", "Live Android App Verification Write Test")
-                    put("target_record", "Supabase Project")
-                }
-
-                writeConn = (URL(writeUrl).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                    setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Prefer", "return=minimal")
-                    doOutput = true
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                }
-
-                writeConn.outputStream.use { output ->
-                    output.write(writePayload.toString().toByteArray(Charsets.UTF_8))
-                }
-
-                val writeCode = writeConn.responseCode
-                if (writeCode !in 200..299) {
-                    val errorText = readErrorStream(writeConn)
-                    connectionState = "Write Error (HTTP $writeCode)"
-                    return@withContext Pair(false, "Write failed with HTTP $writeCode: $errorText")
-                }
-
-                // 2. READ-BACK VERIFICATION QUERY (Specific lookup for testId)
-                val readUrl = "$SUPABASE_URL/rest/v1/audit_logs?id=eq.$testId"
-                readConn = (URL(readUrl).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                    setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                }
-
-                val readCode = readConn.responseCode
-                if (readCode in 200..299) {
-                    val jsonText = readConn.inputStream.bufferedReader().use { it.readText() }
-                    val records = JSONArray(jsonText)
-
-                    var found = false
-                    for (i in 0 until records.length()) {
-                        val rec = records.getJSONObject(i)
-                        if (rec.optString("id") == testId) {
-                            found = true
-                            break
-                        }
-                    }
-
-                    if (found) {
-                        connectionState = "Connected (Live Read/Write Verified)"
-                        lastSyncTimestamp = "Just now (${currentTimeString()})"
-                        Pair(true, "Successfully wrote and verified record $testId via read-back query from Supabase Cloud DB!")
-                    } else {
-                        connectionState = "Read-Back Verification Failed"
-                        Pair(false, "Write succeeded (HTTP $writeCode), but read-back query did not find test ID $testId")
-                    }
-                } else {
-                    val errorText = readErrorStream(readConn)
-                    connectionState = "Read Error (HTTP $readCode)"
-                    Pair(false, "Write succeeded (HTTP $writeCode), but read-back query failed with HTTP $readCode: $errorText")
-                }
-
-            } catch (e: Exception) {
-                connectionState = "Offline / Connection Error"
-                Pair(false, "Connection error: ${e.message}")
-            } finally {
-                writeConn?.disconnect()
-                readConn?.disconnect()
-            }
-        }
-
-    // ---------------------------------------------------------
-    // FETCH TABLE RECORDS
-    // ---------------------------------------------------------
-
-    suspend fun fetchTableRecords(tableName: String, accessToken: String? = null): SupabaseFetchResult =
+    suspend fun fetchPublicTableRecords(tableName: String): SupabaseFetchResult =
         withContext(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
 
             try {
                 val urlString = "$SUPABASE_URL/rest/v1/$tableName?select=*"
-                val tokenToUse = accessToken ?: SUPABASE_ANON_KEY
-
                 connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                    setRequestProperty("Authorization", "Bearer $tokenToUse")
+                    setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
                     connectTimeout = 5000
                     readTimeout = 5000
                 }
@@ -370,24 +319,86 @@ object SupabaseClient {
         }
 
     // ---------------------------------------------------------
-    // INSERT TABLE RECORD
+    // EXPLICIT AUTHENTICATED FETCH (Requires user JWT)
     // ---------------------------------------------------------
 
-    suspend fun insertTableRecord(
+    suspend fun fetchAuthenticatedTableRecords(tableName: String, accessToken: String): SupabaseFetchResult =
+        withContext(Dispatchers.IO) {
+            if (accessToken.isBlank()) {
+                return@withContext SupabaseFetchResult(
+                    isSuccess = false,
+                    statusCode = 401,
+                    data = null,
+                    errorMessage = "Missing authenticated user access token"
+                )
+            }
+            var connection: HttpURLConnection? = null
+
+            try {
+                val urlString = "$SUPABASE_URL/rest/v1/$tableName?select=*"
+                connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer $accessToken")
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+
+                val responseCode = connection.responseCode
+                if (responseCode in 200..299) {
+                    val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
+                    SupabaseFetchResult(
+                        isSuccess = true,
+                        statusCode = responseCode,
+                        data = JSONArray(jsonText),
+                        errorMessage = null
+                    )
+                } else {
+                    val errorText = readErrorStream(connection)
+                    SupabaseFetchResult(
+                        isSuccess = false,
+                        statusCode = responseCode,
+                        data = null,
+                        errorMessage = "HTTP $responseCode: $errorText"
+                    )
+                }
+
+            } catch (e: Exception) {
+                SupabaseFetchResult(
+                    isSuccess = false,
+                    statusCode = -1,
+                    data = null,
+                    errorMessage = e.message ?: "Unknown fetch exception"
+                )
+            } finally {
+                connection?.disconnect()
+            }
+        }
+
+    // ---------------------------------------------------------
+    // EXPLICIT AUTHENTICATED INSERT (Requires user JWT)
+    // ---------------------------------------------------------
+
+    suspend fun insertAuthenticatedTableRecord(
         tableName: String,
         jsonPayload: JSONObject,
-        accessToken: String? = null
+        accessToken: String
     ): SupabaseInsertResult = withContext(Dispatchers.IO) {
+        if (accessToken.isBlank()) {
+            return@withContext SupabaseInsertResult(
+                isSuccess = false,
+                statusCode = 401,
+                errorMessage = "Missing authenticated user access token"
+            )
+        }
         var connection: HttpURLConnection? = null
 
         try {
             val urlString = "$SUPABASE_URL/rest/v1/$tableName"
-            val tokenToUse = accessToken ?: SUPABASE_ANON_KEY
-
             connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                setRequestProperty("Authorization", "Bearer $tokenToUse")
+                setRequestProperty("Authorization", "Bearer $accessToken")
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Prefer", "return=minimal")
                 doOutput = true
@@ -427,7 +438,7 @@ object SupabaseClient {
     }
 
     // ---------------------------------------------------------
-    // FETCH NASUGBU GIS GEOJSON
+    // FETCH NASUGBU GIS GEOJSON (Public RPC)
     // ---------------------------------------------------------
 
     suspend fun fetchNasugbuMapGeoJson(): Pair<String, String>? =
@@ -469,8 +480,8 @@ object SupabaseClient {
                 lastSyncTimestamp = "GIS Synced (${currentTimeString()})"
                 Pair(barangays, roads)
 
-            } catch (e: Exception) {
-                gisLoadError = e.message ?: "Unknown GIS loading error"
+            } catch (_: Exception) {
+                gisLoadError = "Unknown GIS loading error"
                 null
             } finally {
                 connection?.disconnect()

@@ -40,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +55,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -131,10 +134,14 @@ fun AdminScreen(
     }
     // STEP 3: Render Authenticated Role-Based Dashboard
     else {
+        val scope = rememberCoroutineScope()
+        val context = LocalContext.current
         if (userRole == UserRole.DRIVER) {
             DriverDashboardView(onSignOut = {
-                HakotRepository.logout()
-                selectedRoleMode = null
+                scope.launch {
+                    HakotRepository.logout(context)
+                    selectedRoleMode = null
+                }
             })
         } else {
             val adminTabs = listOf("District Overview", "Collection Routes", "Schedules", "Fleet Trucks", "Citizen Reports", "Audit History")
@@ -181,8 +188,10 @@ fun AdminScreen(
 
                         Button(
                             onClick = {
-                                HakotRepository.logout()
-                                selectedRoleMode = null
+                                scope.launch {
+                                    HakotRepository.logout(context)
+                                    selectedRoleMode = null
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceCard),
                             shape = RoundedCornerShape(12.dp),
@@ -361,9 +370,11 @@ fun AdminLoginScreen(
     onExitAdminPortal: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var emailInput by remember { mutableStateOf(if (targetRole == UserRole.DRIVER) "driver@hakot.gov.ph" else "m.lopez@nasugbu.gov.ph") }
     var passwordInput by remember { mutableStateOf("admin123") }
     var isPasswordVisible by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Box(
@@ -474,31 +485,41 @@ fun AdminLoginScreen(
                 Button(
                     onClick = {
                         if (emailInput.isNotBlank() && passwordInput.isNotBlank()) {
-                            val success = HakotRepository.login(emailInput, passwordInput)
-                            if (success) {
-                                val actualRole = HakotRepository.currentAdminRole
-                                // Role verification check!
-                                if (actualRole != targetRole && targetRole == UserRole.DISTRICT_ADMIN) {
-                                    HakotRepository.logout()
-                                    errorMessage = "Access Denied: Account is registered as a Trucker. Please select HAKOT TRUCKER mode."
-                                } else if (actualRole != targetRole && targetRole == UserRole.DRIVER) {
-                                    HakotRepository.logout()
-                                    errorMessage = "Access Denied: Account is registered as a District Admin. Please select ADMINISTRATOR mode."
+                            scope.launch {
+                                isLoading = true
+                                errorMessage = null
+                                val success = HakotRepository.login(context, emailInput, passwordInput)
+                                isLoading = false
+                                if (success) {
+                                    val actualRole = HakotRepository.currentAdminRole
+                                    // Role verification check!
+                                    if (actualRole != targetRole && targetRole == UserRole.DISTRICT_ADMIN) {
+                                        HakotRepository.logout(context)
+                                        errorMessage = "Access Denied: Account is registered as a Trucker. Please select HAKOT TRUCKER mode."
+                                    } else if (actualRole != targetRole && targetRole == UserRole.DRIVER) {
+                                        HakotRepository.logout(context)
+                                        errorMessage = "Access Denied: Account is registered as a District Admin. Please select ADMINISTRATOR mode."
+                                    } else {
+                                        Toast.makeText(context, "Sign In Successful!", Toast.LENGTH_SHORT).show()
+                                    }
                                 } else {
-                                    Toast.makeText(context, "Sign In Successful!", Toast.LENGTH_SHORT).show()
+                                    errorMessage = "Invalid credentials, inactive account, or network error."
                                 }
-                            } else {
-                                errorMessage = "Invalid credentials or inactive account."
                             }
                         } else {
                             errorMessage = "Please enter email and password."
                         }
                     },
+                    enabled = !isLoading,
                     colors = ButtonDefaults.buttonColors(containerColor = if (targetRole == UserRole.DRIVER) RecycleYellow else EcoGreenPrimary),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
-                    Text("Sign In as ${if (targetRole == UserRole.DRIVER) "Trucker" else "Admin"}", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black, strokeWidth = 2.dp)
+                    } else {
+                        Text("Sign In as ${if (targetRole == UserRole.DRIVER) "Trucker" else "Admin"}", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))

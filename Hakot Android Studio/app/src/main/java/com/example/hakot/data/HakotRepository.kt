@@ -1,5 +1,7 @@
 package com.example.hakot.data
 
+import android.content.Context
+import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +24,8 @@ import com.example.hakot.model.ScheduleItem
 import com.example.hakot.model.TruckStatus
 import com.example.hakot.model.UserRole
 import com.example.hakot.model.WasteCategory
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.SecureRandom
 import java.time.LocalDate
 import java.time.LocalTime
@@ -35,6 +39,12 @@ object HakotRepository {
 
     var isAuthenticated: Boolean by mutableStateOf(false)
     var authenticatedUser: AdminUserProfile? by mutableStateOf(null)
+
+    private var currentAccessToken: String? = null
+    private var currentRefreshToken: String? = null
+    private var tokenExpiresAt: Long = 0L
+    private var currentUserId: String? = null
+    private val refreshMutex = Mutex()
 
     var activeOrganization = OrganizationConfig(
         id = "org_nasugbu_lgu",
@@ -68,109 +78,11 @@ object HakotRepository {
     var detectedCity: String = "Nasugbu"
     var detectedProvince: String = "Batangas"
 
-    val adminProfiles = mutableStateListOf(
-        AdminUserProfile(
-            userId = "usr_dist_101",
-            fullName = "Maria Clara Lopez",
-            email = "m.lopez@nasugbu.gov.ph",
-            municipalityOrgId = "org_nasugbu_lgu",
-            municipalityName = "Nasugbu, Batangas",
-            districtId = "dist_1",
-            districtName = "District 1 - Poblacion & Coastal Corridor",
-            role = UserRole.DISTRICT_ADMIN,
-            status = AdminStatus.ACTIVE,
-            registrationDate = "Feb 14, 2026",
-            lastActivity = "Active Now"
-        ),
-        AdminUserProfile(
-            userId = "usr_dist_102",
-            fullName = "Capt. Juanito Cruz",
-            email = "j.cruz@nasugbu.gov.ph",
-            municipalityOrgId = "org_nasugbu_lgu",
-            municipalityName = "Nasugbu, Batangas",
-            districtId = "dist_2",
-            districtName = "District 2 - Bypass & Highway Corridor",
-            role = UserRole.DISTRICT_ADMIN,
-            status = AdminStatus.ACTIVE,
-            registrationDate = "Mar 01, 2026",
-            lastActivity = "Yesterday"
-        )
-    )
-
-    val invitations = mutableStateListOf(
-        DistrictAdminInvitation(
-            invitationId = "inv_801",
-            codeHash = "HAKOT-D7K9-M2QP",
-            rawCodeDisplay = "HAKOT-D7K9-M2QP-X8RN",
-            intendedEmail = "sanitation.head@nasugbu.gov.ph",
-            intendedAdminName = "Engr. Marco Valenzuela",
-            municipalityOrgId = "org_nasugbu_lgu",
-            assignedDistrictId = "dist_3",
-            assignedDistrictName = "District 3 - Outer Municipal Zone",
-            assignedRole = UserRole.DISTRICT_ADMIN,
-            createdByAuthorityOffice = "Nasugbu Sanitation Authority",
-            createdAtMillis = System.currentTimeMillis() - 86400000 * 2,
-            expiresAtMillis = System.currentTimeMillis() + 86400000 * 5,
-            status = AdminStatus.PENDING_INVITATION
-        )
-    )
-
-    val auditLogs = mutableStateListOf(
-        AuditLogEntry(
-            id = "aud_101",
-            actingUserEmail = "m.lopez@nasugbu.gov.ph",
-            action = "Updated District 1 Waste Collection Schedule",
-            targetRecord = "C. Alvarez to F. Alix Street Corridor",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 2
-        ),
-        AuditLogEntry(
-            id = "aud_102",
-            actingUserEmail = "m.lopez@nasugbu.gov.ph",
-            action = "Redeemed District Invitation Code",
-            targetRecord = "District 1 Administrator Account Activated",
-            timestampMillis = System.currentTimeMillis() - 86400000 * 10
-        )
-    )
-
-    val reportMessages = mutableStateListOf(
-        ReportMessage(
-            id = "msg_1",
-            reportId = "rep_100",
-            senderType = "HANDLER",
-            senderName = "Nasugbu Waste Collection Office",
-            text = "Thank you for reporting this unassigned section. Our team is inspecting P. Burgos Street Extension.",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 1
-        ),
-        ReportMessage(
-            id = "msg_2",
-            reportId = "rep_100",
-            senderType = "RESIDENT",
-            senderName = "Anonymous Resident",
-            text = "Thank you! We have 8 households along this corner needing collection.",
-            timestampMillis = System.currentTimeMillis() - 1800000
-        )
-    )
-
-    val announcements = mutableStateListOf(
-        Announcement(
-            id = "ann_1",
-            title = "📢 LGU Holiday Waste Collection Notice",
-            message = "All regular street routes in Nasugbu (C. Alvarez St, J.P. Laurel St & F. Alix St) will proceed as scheduled today.",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 3,
-            category = "Schedule Update",
-            isPinned = true
-        ),
-        Announcement(
-            id = "ann_2",
-            title = "🚛 Extra Truck Dispatched to Roxas Street",
-            message = "Hakot Truck #2 dispatched for afternoon collection along Roxas Street corridor.",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 8,
-            category = "Dispatch Alert",
-            isPinned = false
-        )
-    )
-
-    val dumpsites = mutableStateListOf(
+    val invitations = mutableStateListOf<DistrictAdminInvitation>()
+    val auditLogs = mutableStateListOf<AuditLogEntry>()
+    val reportMessages = mutableStateListOf<ReportMessage>()
+    val announcements = mutableStateListOf<Announcement>()
+    val dumpsites = mutableStateListOf<Dumpsite>(
         Dumpsite(
             id = "ds_1",
             name = "Nasugbu MRF (Recovery Facility)",
@@ -183,23 +95,10 @@ object HakotRepository {
             acceptedWasteTypes = "General Household Waste, Compostables & Recyclables",
             isOpenNow = true,
             contactNumber = "(043) 723-HAKOT"
-        ),
-        Dumpsite(
-            id = "ds_2",
-            name = "Central Municipal Landfill",
-            type = "Sanitary Landfill",
-            address = "Nasugbu Outer Bypass Road",
-            latitude = 14.0820,
-            longitude = 120.6420,
-            capacityPercent = 42,
-            operatingHours = "5:00 AM - 8:00 PM",
-            acceptedWasteTypes = "All Municipal & Residual Waste",
-            isOpenNow = true,
-            contactNumber = "(043) 723-9900"
         )
     )
 
-    val trucks = mutableStateListOf(
+    val trucks = mutableStateListOf<GarbageTruck>(
         GarbageTruck(
             id = "tr_1",
             truckCode = "Hakot Truck #1",
@@ -213,38 +112,10 @@ object HakotRepository {
             status = TruckStatus.ACTIVE_ON_ROUTE,
             speedKmH = 22,
             lastGpsUpdate = "Live - 1 min ago"
-        ),
-        GarbageTruck(
-            id = "tr_2",
-            truckCode = "Hakot Truck #2",
-            plateNumber = "NWD-4512",
-            driverName = "Juan Dela Cruz",
-            assignedRoute = "Roxas Street Corridor",
-            assignedBarangays = "Spans Barangays Wawa & Bucana",
-            destinationDumpsite = "Central Municipal Landfill",
-            latitude = 14.0718,
-            longitude = 120.6330,
-            status = TruckStatus.ACTIVE_ON_ROUTE,
-            speedKmH = 18,
-            lastGpsUpdate = "Live - 2 mins ago"
-        ),
-        GarbageTruck(
-            id = "tr_3",
-            truckCode = "Hakot Truck #3",
-            plateNumber = "RST-9904",
-            driverName = "Pedro Penduko",
-            assignedRoute = "P. Burgos Street Pass",
-            assignedBarangays = "Spans Barangays Looc & Kaylaway",
-            destinationDumpsite = "Nasugbu MRF Facility",
-            latitude = 14.0740,
-            longitude = 120.6325,
-            status = TruckStatus.UNLOADING_AT_DUMPSITE,
-            speedKmH = 0,
-            lastGpsUpdate = "Live - Just now"
         )
     )
 
-    val routes = mutableStateListOf(
+    val routes = mutableStateListOf<CollectionRoute>(
         CollectionRoute(
             id = "rt_1",
             routeName = "C. Alvarez to F. Alix Street Corridor",
@@ -258,89 +129,16 @@ object HakotRepository {
             geoPoints = listOf(
                 Pair(14.0712, 120.6220),
                 Pair(14.0712, 120.6270),
-                Pair(14.0712, 120.6322),
-                Pair(14.0722, 120.6322),
-                Pair(14.0722, 120.6355)
+                Pair(14.0712, 120.6322)
             ),
             assignedTruckPlate = "ABK-8891",
             scheduledTimeWindow = "8:00 AM - 11:30 AM",
             scheduledDate = "Today",
             destinationDumpsite = "Nasugbu MRF Facility"
-        ),
-        CollectionRoute(
-            id = "rt_2",
-            routeName = "Roxas Street Corridor",
-            barangaysCovered = "Roxas St (Spans Brgy Wawa & Bucana)",
-            colorHex = 0xFFF59E0B,
-            waypoints = listOf(
-                Pair(200f, 250f),
-                Pair(500f, 260f),
-                Pair(800f, 280f)
-            ),
-            geoPoints = listOf(
-                Pair(14.0705, 120.6255),
-                Pair(14.0712, 120.6290),
-                Pair(14.0718, 120.6330),
-                Pair(14.0725, 120.6370)
-            ),
-            assignedTruckPlate = "NWD-4512",
-            scheduledTimeWindow = "1:00 PM - 4:30 PM",
-            scheduledDate = "Today",
-            destinationDumpsite = "Central Municipal Landfill"
-        ),
-        CollectionRoute(
-            id = "rt_3",
-            routeName = "P. Burgos Street Pass",
-            barangaysCovered = "P. Burgos St (Spans Brgy Looc & Kaylaway)",
-            colorHex = 0xFF10B981,
-            waypoints = listOf(
-                Pair(600f, 300f),
-                Pair(750f, 320f),
-                Pair(850f, 450f)
-            ),
-            geoPoints = listOf(
-                Pair(14.0680, 120.6275),
-                Pair(14.0710, 120.6295),
-                Pair(14.0740, 120.6325)
-            ),
-            assignedTruckPlate = "RST-9904",
-            scheduledTimeWindow = "5:00 PM - 8:00 PM",
-            scheduledDate = "Today",
-            destinationDumpsite = "Nasugbu MRF Facility"
         )
     )
 
-    val reports = mutableStateListOf(
-        AnonymousReport(
-            id = "rep_100",
-            referenceNumber = "#HK-8924",
-            accessToken = "AUTH-8A2F-9D4C-3B1E",
-            reportType = ReportType.NO_ROUTE_IN_AREA,
-            locationName = "P. Burgos Street Extension, Nasugbu",
-            latitude = 14.0680,
-            longitude = 120.6275,
-            description = "No waste collection route assigned for our section of P. Burgos Street",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 1,
-            status = ReportStatus.IN_PROGRESS,
-            assignedOffice = ReportType.NO_ROUTE_IN_AREA.targetOffice,
-            assignedHandlerName = "Engr. Marco Valenzuela"
-        ),
-        AnonymousReport(
-            id = "rep_101",
-            referenceNumber = "#HK-8925",
-            accessToken = "AUTH-4C7B-1E8D-9F0A",
-            reportType = ReportType.MISSED_COLLECTION,
-            locationName = "C. Alvarez Street corner Zone 2",
-            latitude = 14.0712,
-            longitude = 120.6270,
-            description = "Truck skipped morning collection for 3 houses",
-            timestampMillis = System.currentTimeMillis() - 3600000 * 2,
-            status = ReportStatus.SUBMITTED,
-            assignedOffice = ReportType.MISSED_COLLECTION.targetOffice,
-            assignedHandlerName = "Unassigned Handler"
-        )
-    )
-
+    val reports = mutableStateListOf<AnonymousReport>()
     val schedules = mutableStateListOf<ScheduleItem>()
 
     init {
@@ -350,8 +148,6 @@ object HakotRepository {
     private fun generateDefaultSchedules() {
         val currDate = LocalDate.now()
         schedules.clear()
-
-        // Today's working schedules based on Street Names spanning multiple barangays
         schedules.add(
             ScheduleItem(
                 id = "sch_1",
@@ -365,131 +161,262 @@ object HakotRepository {
                 status = "On Track"
             )
         )
-        schedules.add(
-            ScheduleItem(
-                id = "sch_2",
-                barangay = "Roxas Street (Spans Brgy Wawa & Bucana)",
-                routeName = "Roxas Street Corridor",
-                date = currDate,
-                startTime = LocalTime.of(13, 0),
-                endTime = LocalTime.of(16, 30),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #2 (NWD-4512)",
-                status = "Scheduled"
-            )
-        )
-        schedules.add(
-            ScheduleItem(
-                id = "sch_3",
-                barangay = "P. Burgos Street (Spans Brgy Looc & Kaylaway)",
-                routeName = "P. Burgos Street Pass",
-                date = currDate,
-                startTime = LocalTime.of(17, 0),
-                endTime = LocalTime.of(20, 0),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #3 (RST-9904)",
-                status = "Scheduled"
-            )
-        )
-
-        // Tomorrow's schedules
-        schedules.add(
-            ScheduleItem(
-                id = "sch_4",
-                barangay = "Nasugbu Highway (Spans Multiple Barangays)",
-                routeName = "Roxas Street Corridor",
-                date = currDate.plusDays(1),
-                startTime = LocalTime.of(7, 30),
-                endTime = LocalTime.of(11, 0),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #1 (ABK-8891)",
-                status = "Scheduled"
-            )
-        )
-        schedules.add(
-            ScheduleItem(
-                id = "sch_5",
-                barangay = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-                routeName = "C. Alvarez to F. Alix Street Corridor",
-                date = currDate.plusDays(1),
-                startTime = LocalTime.of(14, 0),
-                endTime = LocalTime.of(17, 0),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #2 (NWD-4512)",
-                status = "Scheduled"
-            )
-        )
     }
 
-    fun login(emailInput: String, passwordInput: String): Boolean {
-        val trimmedEmail = emailInput.trim().lowercase()
-        val profile = adminProfiles.find { it.email.lowercase() == trimmedEmail }
+    suspend fun getValidAccessToken(context: Context): String? = refreshMutex.withLock {
+        if (currentAccessToken.isNullOrBlank() || currentUserId.isNullOrBlank()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val sessionManager = SessionManager(context)
+                val session = sessionManager.loadSession() ?: return@withLock null
+                if (!SessionManager.isValidUuid(session.userId)) {
+                    sessionManager.clearSession()
+                    return@withLock null
+                }
+                currentAccessToken = session.accessToken
+                currentRefreshToken = session.refreshToken
+                tokenExpiresAt = session.expiresAt
+                currentUserId = session.userId
+            } else {
+                return@withLock null
+            }
+        }
 
-        if (profile != null && profile.status == AdminStatus.ACTIVE) {
-            isAuthenticated = true
-            authenticatedUser = profile
+        // Check if token expires within 2 minutes
+        if (System.currentTimeMillis() >= tokenExpiresAt - 120_000) {
+            val tokenToRefresh = currentRefreshToken ?: return@withLock null
+            val resp = SupabaseClient.refreshSession(tokenToRefresh)
+            if (resp != null && resp.userId == currentUserId && SessionManager.isValidUuid(resp.userId)) {
+                // Persist new token pair FIRST before updating in-memory state
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val sessionManager = SessionManager(context)
+                    val session = sessionManager.loadSession()
+                    val userEmail = session?.email ?: ""
+                    if (userEmail.isBlank()) {
+                        sessionManager.clearSession()
+                        currentAccessToken = null
+                        currentRefreshToken = null
+                        tokenExpiresAt = 0L
+                        currentUserId = null
+                        isAuthenticated = false
+                        authenticatedUser = null
+                        return@withLock null
+                    }
+                    val saved = sessionManager.saveSession(UserSession(resp.accessToken, resp.refreshToken, resp.expiresAt, resp.userId, userEmail))
+                    if (!saved) {
+                        sessionManager.clearSession()
+                        currentAccessToken = null
+                        currentRefreshToken = null
+                        tokenExpiresAt = 0L
+                        currentUserId = null
+                        isAuthenticated = false
+                        authenticatedUser = null
+                        return@withLock null
+                    }
+                }
+                currentAccessToken = resp.accessToken
+                currentRefreshToken = resp.refreshToken
+                tokenExpiresAt = resp.expiresAt
+            } else {
+                // Refresh failed or user ID mismatch: clear session safely
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    SessionManager(context).clearSession()
+                }
+                currentAccessToken = null
+                currentRefreshToken = null
+                tokenExpiresAt = 0L
+                currentUserId = null
+                isAuthenticated = false
+                authenticatedUser = null
+                return@withLock null
+            }
+        }
+        return@withLock currentAccessToken
+    }
+
+    suspend fun login(context: Context, emailInput: String, passwordInput: String): Boolean {
+        // Ensure failed login cannot leave previous user authenticated state active
+        logout(context)
+
+        val cleanEmail = emailInput.trim()
+        val authResp = SupabaseClient.signIn(cleanEmail, passwordInput) ?: return false
+
+        val accessToken = authResp.accessToken
+        val userId = authResp.userId
+
+        if (!SessionManager.isValidUuid(userId)) return false
+
+        val profileJson = SupabaseClient.fetchProfile(userId, accessToken) ?: return false
+
+        val profileId = profileJson.optString("id")
+        if (profileId != userId || !SessionManager.isValidUuid(profileId)) {
+            return false
+        }
+
+        val roleStr = profileJson.optString("role").lowercase()
+        val statusStr = profileJson.optString("account_status").lowercase()
+
+        if (statusStr != "active") return false
+        val role = when (roleStr) {
+            "district_admin" -> UserRole.DISTRICT_ADMIN
+            "driver" -> UserRole.DRIVER
+            else -> return false
+        }
+
+        val fullName = profileJson.optString("full_name")
+        if (fullName.isBlank()) return false
+
+        // Role-aware validation: district_admin requires municipality_id and district_id; driver may have nullable district_id
+        val municipalityId = profileJson.optString("municipality_id")
+        val districtId = profileJson.optString("district_id")
+
+        if (role == UserRole.DISTRICT_ADMIN && (municipalityId.isBlank() || districtId.isBlank())) {
+            return false
+        }
+
+        val profile = AdminUserProfile(
+            userId = userId,
+            fullName = fullName,
+            email = cleanEmail,
+            municipalityOrgId = municipalityId.ifBlank { activeOrganization.id },
+            municipalityName = activeOrganization.name,
+            districtId = districtId.ifBlank { "dist_1" },
+            districtName = "District Assigned Scope",
+            role = role,
+            status = AdminStatus.ACTIVE,
+            registrationDate = profileJson.optString("created_at", "Today"),
+            lastActivity = "Active Now"
+        )
+
+        // Save encrypted session FIRST before establishing authenticated state
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val sessionManager = SessionManager(context)
+            val saved = sessionManager.saveSession(UserSession(accessToken, authResp.refreshToken, authResp.expiresAt, userId, cleanEmail))
+            if (!saved) {
+                sessionManager.clearSession()
+                return false
+            }
+        }
+
+        currentAccessToken = accessToken
+        currentRefreshToken = authResp.refreshToken
+        tokenExpiresAt = authResp.expiresAt
+        currentUserId = userId
+
+        isAuthenticated = true
+        authenticatedUser = profile
+        currentAdminRole = role
+        if (role == UserRole.DISTRICT_ADMIN) {
             currentDistrictAdmin = profile
-            currentAdminRole = profile.role
-
-            auditLogs.add(0, AuditLogEntry(
-                id = "aud_${System.currentTimeMillis() % 10000}",
-                actingUserEmail = profile.email,
-                action = "Authenticated Login Success (${profile.role.label})",
-                targetRecord = profile.districtName,
-                timestampMillis = System.currentTimeMillis()
-            ))
-
-            return true
         }
 
-        // Driver login shortcut or default valid email login
-        if (trimmedEmail.contains("driver") || trimmedEmail.contains("truck") || emailInput == "driver@hakot.gov.ph") {
-            val driverProfile = AdminUserProfile(
-                userId = "usr_driver_1",
-                fullName = "Mario Santos (Truck Driver)",
-                email = "driver@hakot.gov.ph",
-                municipalityOrgId = activeOrganization.id,
-                municipalityName = activeOrganization.name,
-                districtId = "dist_1",
-                districtName = "District 1 - Truck #1 Route",
-                role = UserRole.DRIVER,
-                status = AdminStatus.ACTIVE,
-                registrationDate = "Today",
-                lastActivity = "Active Now"
-            )
-            isAuthenticated = true
-            authenticatedUser = driverProfile
-            currentAdminRole = UserRole.DRIVER
-            return true
-        }
-
-        // Allow default admin email
-        val defaultAdmin = currentDistrictAdmin
-        if (trimmedEmail == defaultAdmin.email.lowercase() || trimmedEmail.contains("admin")) {
-            isAuthenticated = true
-            authenticatedUser = defaultAdmin
-            currentAdminRole = defaultAdmin.role
-            return true
-        }
-
-        return false
-    }
-
-    fun logout() {
-        val userEmail = authenticatedUser?.email ?: "admin@hakot.gov.ph"
         auditLogs.add(0, AuditLogEntry(
             id = "aud_${System.currentTimeMillis() % 10000}",
-            actingUserEmail = userEmail,
-            action = "Authenticated User Signed Out",
-            targetRecord = "Session Closed",
+            actingUserEmail = profile.email,
+            action = "Supabase Auth Login Success (${role.label})",
+            targetRecord = profile.districtName,
             timestampMillis = System.currentTimeMillis()
         ))
+
+        return true
+    }
+
+    suspend fun restoreSession(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val sessionManager = SessionManager(context)
+        val session = sessionManager.loadSession() ?: return false
+
+        if (!SessionManager.isValidUuid(session.userId) || session.email.isBlank()) {
+            sessionManager.clearSession()
+            return false
+        }
+
+        val token = getValidAccessToken(context) ?: return false
+        val profileJson = SupabaseClient.fetchProfile(session.userId, token) ?: return false
+
+        val profileId = profileJson.optString("id")
+        if (profileId != session.userId || !SessionManager.isValidUuid(profileId)) {
+            sessionManager.clearSession()
+            return false
+        }
+
+        val roleStr = profileJson.optString("role").lowercase()
+        val statusStr = profileJson.optString("account_status").lowercase()
+
+        if (statusStr != "active") {
+            sessionManager.clearSession()
+            return false
+        }
+
+        val role = when (roleStr) {
+            "district_admin" -> UserRole.DISTRICT_ADMIN
+            "driver" -> UserRole.DRIVER
+            else -> {
+                sessionManager.clearSession()
+                return false
+            }
+        }
+
+        val fullName = profileJson.optString("full_name")
+        if (fullName.isBlank()) {
+            sessionManager.clearSession()
+            return false
+        }
+
+        val municipalityId = profileJson.optString("municipality_id")
+        val districtId = profileJson.optString("district_id")
+
+        if (role == UserRole.DISTRICT_ADMIN && (municipalityId.isBlank() || districtId.isBlank())) {
+            sessionManager.clearSession()
+            return false
+        }
+
+        val profile = AdminUserProfile(
+            userId = session.userId,
+            fullName = fullName,
+            email = session.email,
+            municipalityOrgId = municipalityId.ifBlank { activeOrganization.id },
+            municipalityName = activeOrganization.name,
+            districtId = districtId.ifBlank { "dist_1" },
+            districtName = "District Assigned Scope",
+            role = role,
+            status = AdminStatus.ACTIVE,
+            registrationDate = profileJson.optString("created_at", "Restored"),
+            lastActivity = "Active Now"
+        )
+
+        currentUserId = session.userId
+        isAuthenticated = true
+        authenticatedUser = profile
+        currentAdminRole = role
+        if (role == UserRole.DISTRICT_ADMIN) {
+            currentDistrictAdmin = profile
+        }
+
+        return true
+    }
+
+    suspend fun logout(context: Context) {
+        val token = currentAccessToken
+        if (!token.isNullOrBlank()) {
+            try {
+                SupabaseClient.signOutRemote(token)
+            } catch (_: Exception) {
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            SessionManager(context).clearSession()
+        }
+
+        currentAccessToken = null
+        currentRefreshToken = null
+        tokenExpiresAt = 0L
+        currentUserId = null
 
         isAuthenticated = false
         authenticatedUser = null
     }
 
-    // Cryptographically secure random invitation code generator
     fun generateDistrictInvitation(
         districtName: String,
         intendedAdminName: String,
@@ -517,18 +444,11 @@ object HakotRepository {
         )
 
         invitations.add(0, newInv)
-
-        auditLogs.add(0, AuditLogEntry(
-            id = "aud_${System.currentTimeMillis() % 10000}",
-            actingUserEmail = currentDistrictAdmin.email,
-            action = "Generated Invitation Code for $districtName",
-            targetRecord = "$intendedEmail ($formattedCode)",
-            timestampMillis = System.currentTimeMillis()
-        ))
-
         return newInv
     }
 
+    // Invitation redemption updated: NEVER establishes isAuthenticated = true or creates an authenticated user by generating a fake user ID.
+    // Invitation redemption is strictly an administrative placeholder / backend RPC task and does not bypass Supabase Auth.
     fun redeemInvitation(code: String, email: String): Boolean {
         val cleanedCode = code.trim().uppercase()
         val matchedInv = invitations.find {
@@ -540,33 +460,6 @@ object HakotRepository {
         if (matchedInv != null) {
             matchedInv.status = AdminStatus.ACTIVE
             matchedInv.redeemedAtMillis = System.currentTimeMillis()
-
-            currentDistrictAdmin = AdminUserProfile(
-                userId = "usr_dist_${System.currentTimeMillis() % 10000}",
-                fullName = matchedInv.intendedAdminName,
-                email = email,
-                municipalityOrgId = matchedInv.municipalityOrgId,
-                municipalityName = activeOrganization.name,
-                districtId = matchedInv.assignedDistrictId,
-                districtName = matchedInv.assignedDistrictName,
-                role = UserRole.DISTRICT_ADMIN,
-                status = AdminStatus.ACTIVE,
-                registrationDate = "Today",
-                lastActivity = "Active Now"
-            )
-
-            isAuthenticated = true
-            authenticatedUser = currentDistrictAdmin
-            currentAdminRole = UserRole.DISTRICT_ADMIN
-
-            auditLogs.add(0, AuditLogEntry(
-                id = "aud_${System.currentTimeMillis() % 10000}",
-                actingUserEmail = email,
-                action = "Redeemed Invitation Code & Bound Account to ${matchedInv.assignedDistrictName}",
-                targetRecord = matchedInv.assignedDistrictName,
-                timestampMillis = System.currentTimeMillis()
-            ))
-
             return true
         }
         return false

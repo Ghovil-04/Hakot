@@ -96,23 +96,30 @@ fun SplashScreen(onTimeout: () -> Unit) {
         // Step 1: Initialize Local Data Repository & Schedules
         currentProgress = 0.25f
         HakotRepository.schedules
-        delay(250)
+        delay(200)
+
+        // Step 1.5: Restore Secure Supabase Auth Session
+        currentProgress = 0.45f
+        try {
+            HakotRepository.restoreSession(context)
+        } catch (_: Exception) {}
+        delay(200)
 
         // Step 2: Pre-warm MapLibre SDK Engine in Background
-        currentProgress = 0.50f
+        currentProgress = 0.65f
         try {
             MapLibre.getInstance(context.applicationContext)
         } catch (_: Exception) {}
-        delay(250)
+        delay(200)
 
         // Step 3: Load Organization Configuration
-        currentProgress = 0.75f
+        currentProgress = 0.85f
         HakotRepository.activeOrganization
-        delay(250)
+        delay(200)
 
         // Step 4: Complete Initialization
         currentProgress = 1.0f
-        delay(200)
+        delay(150)
 
         onTimeout()
     }
