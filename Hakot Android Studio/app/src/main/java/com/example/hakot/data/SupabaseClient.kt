@@ -26,6 +26,13 @@ data class SupabaseInsertResult(
     val errorMessage: String?
 )
 
+data class AuthTokenResponse(
+    val accessToken: String,
+    val refreshToken: String,
+    val expiresAt: Long,
+    val userId: String
+)
+
 object SupabaseClient {
 
     const val SUPABASE_URL = "https://vyegsnkerrbdqacwegff.supabase.co"
@@ -46,6 +53,143 @@ object SupabaseClient {
             e.message ?: "Failed to read error stream"
         }
     }
+
+    // ---------------------------------------------------------
+    // SUPABASE AUTHENTICATION
+    // ---------------------------------------------------------
+
+    suspend fun signIn(emailInput: String, passwordInput: String): AuthTokenResponse? =
+        withContext(Dispatchers.IO) {
+            var connection: HttpURLConnection? = null
+            try {
+                val urlString = "$SUPABASE_URL/auth/v1/token?grant_type=password"
+                connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                    setRequestProperty("Content-Type", "application/json")
+                    doOutput = true
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                }
+
+                val payload = JSONObject().apply {
+                    put("email", emailInput)
+                    put("password", passwordInput)
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(jsonText)
+                    val accessToken = json.optString("access_token")
+                    val refreshToken = json.optString("refresh_token")
+                    val expiresIn = json.optLong("expires_in", 3600)
+                    val userObj = json.optJSONObject("user")
+                    val userId = userObj?.optString("id") ?: ""
+
+                    if (accessToken.isNotBlank() && userId.isNotBlank()) {
+                        return@withContext AuthTokenResponse(accessToken, refreshToken, System.currentTimeMillis() + expiresIn * 1000, userId)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                connection?.disconnect()
+            }
+            null
+        }
+
+    suspend fun refreshSession(refreshTokenInput: String): AuthTokenResponse? =
+        withContext(Dispatchers.IO) {
+            var connection: HttpURLConnection? = null
+            try {
+                val urlString = "$SUPABASE_URL/auth/v1/token?grant_type=refresh_token"
+                connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                    setRequestProperty("Content-Type", "application/json")
+                    doOutput = true
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                }
+
+                val payload = JSONObject().apply {
+                    put("refresh_token", refreshTokenInput)
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(jsonText)
+                    val accessToken = json.optString("access_token")
+                    val refreshToken = json.optString("refresh_token")
+                    val expiresIn = json.optLong("expires_in", 3600)
+                    val userObj = json.optJSONObject("user")
+                    val userId = userObj?.optString("id") ?: ""
+
+                    if (accessToken.isNotBlank() && userId.isNotBlank()) {
+                        return@withContext AuthTokenResponse(accessToken, refreshToken, System.currentTimeMillis() + expiresIn * 1000, userId)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                connection?.disconnect()
+            }
+            null
+        }
+
+    suspend fun signOutRemote(accessToken: String): Boolean =
+        withContext(Dispatchers.IO) {
+            var connection: HttpURLConnection? = null
+            try {
+                val urlString = "$SUPABASE_URL/auth/v1/logout"
+                connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer $accessToken")
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+                return@withContext connection.responseCode in 200..299
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            } finally {
+                connection?.disconnect()
+            }
+        }
+
+    suspend fun fetchProfile(userId: String, accessToken: String): JSONObject? =
+        withContext(Dispatchers.IO) {
+            var connection: HttpURLConnection? = null
+            try {
+                val urlString = "$SUPABASE_URL/rest/v1/profiles?id=eq.$userId&select=*"
+                connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                    setRequestProperty("Authorization", "Bearer $accessToken")
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val arr = JSONArray(jsonText)
+                    if (arr.length() > 0) {
+                        return@withContext arr.getJSONObject(0)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                connection?.disconnect()
+            }
+            null
+        }
 
     // ---------------------------------------------------------
     // CHECK SUPABASE CONNECTION
@@ -178,16 +322,18 @@ object SupabaseClient {
     // FETCH TABLE RECORDS
     // ---------------------------------------------------------
 
-    suspend fun fetchTableRecords(tableName: String): SupabaseFetchResult =
+    suspend fun fetchTableRecords(tableName: String, accessToken: String? = null): SupabaseFetchResult =
         withContext(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
 
             try {
                 val urlString = "$SUPABASE_URL/rest/v1/$tableName?select=*"
+                val tokenToUse = accessToken ?: SUPABASE_ANON_KEY
+
                 connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                    setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
+                    setRequestProperty("Authorization", "Bearer $tokenToUse")
                     connectTimeout = 5000
                     readTimeout = 5000
                 }
@@ -229,16 +375,19 @@ object SupabaseClient {
 
     suspend fun insertTableRecord(
         tableName: String,
-        jsonPayload: JSONObject
+        jsonPayload: JSONObject,
+        accessToken: String? = null
     ): SupabaseInsertResult = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
 
         try {
             val urlString = "$SUPABASE_URL/rest/v1/$tableName"
+            val tokenToUse = accessToken ?: SUPABASE_ANON_KEY
+
             connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
+                setRequestProperty("Authorization", "Bearer $tokenToUse")
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Prefer", "return=minimal")
                 doOutput = true
