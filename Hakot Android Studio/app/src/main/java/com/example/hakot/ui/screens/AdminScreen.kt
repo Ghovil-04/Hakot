@@ -612,13 +612,16 @@ fun SystemOwnerApplicationsReviewView() {
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Button(
-                                        enabled = false,
-                                        onClick = {},
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                        enabled = !isProcessingDecision,
+                                        onClick = {
+                                            selectedApplication = app
+                                            showApproveConfirm = true
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = EcoGreenPrimary),
                                         shape = RoundedCornerShape(8.dp),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
-                                        Text("Approve (Blocked - 501)", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("Approve", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -637,25 +640,51 @@ fun SystemOwnerApplicationsReviewView() {
                     selectedApplication = null
                 }
             },
-            title = { Text("Account Approval Unavailable (HTTP 501)") },
-            text = { Text("Account approval and secure user provisioning are currently blocked pending authorized workflow design. You cannot approve ${selectedApplication?.fullName} at this time.") },
+            title = { Text("Approve Application?") },
+            text = { Text("Are you sure you want to approve ${selectedApplication?.fullName} for ${selectedApplication?.requestedRole?.label}? This will securely provision their account and send an invitation.") },
             confirmButton = {
                 Button(
-                    enabled = false,
-                    onClick = {},
-                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceCard)
+                    enabled = !isProcessingDecision,
+                    onClick = {
+                        val app = selectedApplication ?: return@Button
+                        scope.launch {
+                            isProcessingDecision = true
+                            errorMessage = null
+                            successMessage = null
+                            val res = HakotRepository.updateAccountApplicationStatus(app.applicationId, ApplicationStatus.APPROVED)
+                            if (res.first) {
+                                HakotRepository.fetchAccountApplications()
+                                successMessage = "Application approved and account provisioned successfully."
+                                showApproveConfirm = false
+                                selectedApplication = null
+                            } else {
+                                errorMessage = res.second
+                            }
+                            isProcessingDecision = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EcoGreenPrimary)
                 ) {
-                    Text("Approval Blocked", color = TextOnDarkSecondary, fontWeight = FontWeight.Bold)
+                    if (isProcessingDecision) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.Black,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Confirm Approve", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             dismissButton = {
                 TextButton(
+                    enabled = !isProcessingDecision,
                     onClick = {
                         showApproveConfirm = false
                         selectedApplication = null
                     }
                 ) {
-                    Text("Close", color = EcoGreenLight)
+                    Text("Cancel", color = TextOnDarkSecondary)
                 }
             },
             containerColor = DarkSurfaceCard
