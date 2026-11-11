@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const ALLOWED_ROLES = ['municipal_admin', 'municipal_staff', 'driver', 'district_admin']
+const ALLOWED_ROLES = ['municipal_admin', 'municipal_staff', 'company_admin', 'district_admin', 'driver']
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -53,7 +53,7 @@ serve(async (req) => {
       })
     }
 
-    // Verify caller is active system_owner
+    // Verify caller is active system_owner (System Owner platform-wide review only)
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
       .select('role, account_status')
@@ -91,9 +91,9 @@ serve(async (req) => {
     if (action === 'LIST_PENDING') {
       const { data, error } = await supabaseAdmin
         .from('account_applications')
-        .select('id, full_name, email, contact_number, municipality_id, office_department, official_position, requested_role, status, created_at')
+        .select('id, full_name, email, contact_number, municipality_id, office_department, official_position, requested_role, status, submitted_at, reviewed_at, reviewed_by, review_notes')
         .eq('status', 'PENDING')
-        .order('created_at', { ascending: false })
+        .order('submitted_at', { ascending: false })
 
       if (error) {
         return new Response(JSON.stringify({ error: error.message }), {
@@ -116,130 +116,32 @@ serve(async (req) => {
         })
       }
 
-      // 1. Atomic claim: transition application status from PENDING to PROCESSING
-      const { data: claimedApp, error: claimError } = await supabaseAdmin
+      // Fetch application record
+      const { data: targetApp, error: fetchAppError } = await supabaseAdmin
         .from('account_applications')
-        .update({ status: 'PROCESSING' })
+        .select('*')
         .eq('id', applicationId)
         .eq('status', 'PENDING')
-        .select()
         .single()
 
-      if (claimError || !claimedApp) {
-        const { data: existingApp } = await supabaseAdmin
-          .from('account_applications')
-          .select('status')
-          .eq('id', applicationId)
-          .single()
-
-        if (existingApp?.status === 'APPROVED') {
-          return new Response(JSON.stringify({ error: 'Conflict: Application has already been approved.' }), {
-            status: 409,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-        if (existingApp?.status === 'PROCESSING') {
-          return new Response(JSON.stringify({ error: 'Conflict: Application is currently being processed by another admin.' }), {
-            status: 409,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-        return new Response(JSON.stringify({ error: 'Conflict: Application not found or no longer pending.' }), {
+      if (fetchAppError || !targetApp) {
+        return new Response(JSON.stringify({ error: 'Conflict: Application not found, already processed, or not pending.' }), {
           status: 409,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
 
-      // 2. Strict role allowlist validation
-      const requestedRole = (claimedApp.requested_role || '').toLowerCase().trim()
-      if (!ALLOWED_ROLES.includes(requestedRole)) {
-        await supabaseAdmin.from('account_applications').update({ status: 'PENDING' }).eq('id', applicationId)
+      const requestedRole = (targetApp.requested_role || '').toLowerCase().trim()
+      if (!ALLOWED_ROLES.includes(requestedRole) || requestedRole === 'system_owner') {
         return new Response(JSON.stringify({ error: `Forbidden: Requested role '${requestedRole}' is not permitted for public applications.` }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
 
-      if (requestedRole !== 'driver' && !claimedApp.municipality_id) {
-        await supabaseAdmin.from('account_applications').update({ status: 'PENDING' }).eq('id', applicationId)
-        return new Response(JSON.stringify({ error: 'Validation failed: Municipality scope ID is required for administrative roles.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      // 3. Check if Auth user already exists for this email
-      let userId: string | null = null
-      const { data: listUsersData } = await supabaseAdmin.auth.admin.listUsers()
-      const existingUser = listUsersData?.users?.find(u => u.email?.toLowerCase() === claimedApp.email.toLowerCase())
-
-      if (existingUser) {
-        userId = existingUser.id
-      } else {
-        const { data: authData, error: authInviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(claimedApp.email, {
-          data: { full_name: claimedApp.full_name },
-        })
-
-        if (authInviteError || !authData.user) {
-          await supabaseAdmin.from('account_applications').update({ status: 'PENDING' }).eq('id', applicationId)
-          return new Response(JSON.stringify({ error: `Failed to invite user: ${authInviteError?.message}` }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-        userId = authData.user.id
-      }
-
-      // 4. Create or verify profile
-      const { data: existingProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('id', userId)
-        .single()
-
-      if (!existingProfile) {
-        const { error: profileCreateError } = await supabaseAdmin
-          .from('profiles')
-          .insert({
-            id: userId,
-            full_name: claimedApp.full_name,
-            email: claimedApp.email,
-            role: requestedRole,
-            account_status: 'active',
-            municipality_id: claimedApp.municipality_id,
-            office_department: claimedApp.office_department,
-            official_position: claimedApp.official_position,
-          })
-
-        if (profileCreateError) {
-          if (!existingUser) {
-            try { await supabaseAdmin.auth.admin.deleteUser(userId) } catch (_) {}
-          }
-          await supabaseAdmin.from('account_applications').update({ status: 'PENDING' }).eq('id', applicationId)
-          return new Response(JSON.stringify({ error: `Failed to create profile: ${profileCreateError.message}` }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-      }
-
-      // 5. Finalize application status to APPROVED
-      const { data: finalUpdate, error: updateError } = await supabaseAdmin
-        .from('account_applications')
-        .update({ status: 'APPROVED' })
-        .eq('id', applicationId)
-        .eq('status', 'PROCESSING')
-        .select()
-
-      if (updateError || !finalUpdate || finalUpdate.length === 0) {
-        return new Response(JSON.stringify({ error: `Account provisioned successfully, but final status update failed: ${updateError?.message || 'Zero records updated'}` }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      return new Response(JSON.stringify({ success: true, message: 'Account invitation sent and application approved successfully.' }), {
-        status: 200,
+      // Provisioning is blocked pending authorized schema/workflow migration design
+      return new Response(JSON.stringify({ error: 'Account provisioning is currently blocked pending authorized schema and workflow migration design.' }), {
+        status: 501,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -254,7 +156,11 @@ serve(async (req) => {
 
       const { data: updatedApps, error: updateError } = await supabaseAdmin
         .from('account_applications')
-        .update({ status: 'REJECTED' })
+        .update({
+          status: 'REJECTED',
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: user.id,
+        })
         .eq('id', applicationId)
         .eq('status', 'PENDING')
         .select()

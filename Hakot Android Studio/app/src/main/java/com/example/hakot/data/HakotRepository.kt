@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.security.SecureRandom
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.UUID
@@ -836,13 +837,46 @@ object HakotRepository {
                 val municipality = item.optString("municipality_id", "Nasugbu, Batangas")
                 val office = item.optString("office_department", "")
                 val position = item.optString("official_position", "")
-                val roleStr = item.optString("requested_role", "")
-                val statusStr = item.optString("status", "")
+                val roleStr = item.optString("requested_role", "").lowercase().trim()
+                val statusStr = item.optString("status", "").uppercase().trim()
 
-                val role = UserRole.entries.find { it.name.equals(roleStr, ignoreCase = true) } ?: continue
-                val status = ApplicationStatus.entries.find { it.name.equals(statusStr, ignoreCase = true) } ?: continue
+                // Map only the 5 permitted application roles: municipal_admin, municipal_staff, company_admin, district_admin, driver
+                // Never accept system_owner as an application role. Do not silently convert unknown roles into MUNICIPAL_STAFF.
+                val role = when (roleStr) {
+                    "municipal_admin" -> UserRole.MUNICIPAL_ADMIN
+                    "municipal_staff" -> UserRole.MUNICIPAL_STAFF
+                    "company_admin" -> UserRole.COMPANY_ADMIN
+                    "district_admin" -> UserRole.DISTRICT_ADMIN
+                    "driver" -> UserRole.DRIVER
+                    else -> {
+                        Log.w("HAKOT_APPLICATIONS", "Skipping application ID $id: Unrecognized or prohibited requested_role '$roleStr'")
+                        continue
+                    }
+                }
 
-                val createdAt = item.optLong("created_at", System.currentTimeMillis())
+                // Do not silently convert unknown statuses into PENDING.
+                val status = when (statusStr) {
+                    "PENDING" -> ApplicationStatus.PENDING
+                    "APPROVED" -> ApplicationStatus.APPROVED
+                    "REJECTED" -> ApplicationStatus.REJECTED
+                    else -> {
+                        Log.w("HAKOT_APPLICATIONS", "Skipping application ID $id: Unrecognized status '$statusStr'")
+                        continue
+                    }
+                }
+
+                val submittedAtStr = item.optString("submitted_at", "")
+                val createdAtMillis = if (submittedAtStr.isNotBlank()) {
+                    try {
+                        Instant.parse(submittedAtStr).toEpochMilli()
+                    } catch (e: Exception) {
+                        Log.e("HAKOT_APPLICATIONS", "Failed to parse submitted_at timestamp '$submittedAtStr': ${e.message}")
+                        continue // Skip malformed record rather than silently substituting current time
+                    }
+                } else {
+                    Log.e("HAKOT_APPLICATIONS", "Missing submitted_at timestamp for application ID $id")
+                    continue
+                }
 
                 list.add(
                     AccountApplication(
@@ -854,16 +888,20 @@ object HakotRepository {
                         officeDepartment = office,
                         officialPosition = position,
                         requestedRole = role,
+                        companyName = "",
                         status = status,
-                        createdAtMillis = createdAt
+                        createdAtMillis = createdAtMillis
                     )
                 )
             }
+            // Do not clear the currently displayed application list until the new response has been successfully parsed.
             accountApplications.clear()
             accountApplications.addAll(list)
             return Pair(true, "Fetched ${list.size} pending account applications successfully.")
         } else {
-            return Pair(false, "Failed to fetch applications: ${fetchResult.errorMessage ?: "Network or authorization error"}")
+            val err = fetchResult.errorMessage ?: "Network or authorization error"
+            Log.e("HAKOT_APPLICATIONS", "Failed to fetch applications: $err (Code: ${fetchResult.statusCode})")
+            return Pair(false, "Failed to fetch applications: $err")
         }
     }
 

@@ -371,7 +371,8 @@ data class AccountApplication(
     val municipality: String,
     val officeDepartment: String,
     val officialPosition: String,
-    val requestedRole: UserRole, // MUNICIPAL_ADMIN, MUNICIPAL_STAFF, DRIVER (Never SYSTEM_OWNER)
+    val requestedRole: UserRole, // MUNICIPAL_ADMIN, MUNICIPAL_STAFF, COMPANY_ADMIN, DISTRICT_ADMIN, DRIVER (Never SYSTEM_OWNER)
+    val companyName: String = "",
     var status: ApplicationStatus = ApplicationStatus.PENDING,
     val createdAtMillis: Long = System.currentTimeMillis()
 )
