@@ -35,6 +35,18 @@ data class AuthTokenResponse(
     val userId: String
 )
 
+data class RefreshSessionResult(
+    val tokenResponse: AuthTokenResponse?,
+    val isPermanentFailure: Boolean,
+    val statusCode: Int
+)
+
+data class FetchProfileResult(
+    val profile: JSONObject?,
+    val isPermanentFailure: Boolean,
+    val statusCode: Int
+)
+
 object SupabaseClient {
 
     const val SUPABASE_URL = "https://vyegsnkerrbdqacwegff.supabase.co"
@@ -149,9 +161,11 @@ object SupabaseClient {
             null
         }
 
-    suspend fun refreshSession(refreshTokenInput: String): AuthTokenResponse? =
+    suspend fun refreshSession(refreshTokenInput: String): RefreshSessionResult =
         withContext(Dispatchers.IO) {
-            if (refreshTokenInput.isBlank()) return@withContext null
+            if (refreshTokenInput.isBlank()) {
+                return@withContext RefreshSessionResult(null, true, 400)
+            }
             var connection: HttpURLConnection? = null
             try {
                 val urlString = "$SUPABASE_URL/auth/v1/token?grant_type=refresh_token"
@@ -172,17 +186,20 @@ object SupabaseClient {
                 val code = connection.responseCode
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
-                    return@withContext parseAuthResponse(jsonText)
+                    val tokenResp = parseAuthResponse(jsonText)
+                    return@withContext RefreshSessionResult(tokenResp, tokenResp == null, code)
                 } else {
                     val errText = readErrorStream(connection)
-                    Log.e("HAKOT_AUTH", "signIn failed with HTTP $code: $errText")
+                    Log.e("HAKOT_AUTH", "refreshSession failed with HTTP $code: $errText")
+                    val isPermanent = code in 400..403
+                    return@withContext RefreshSessionResult(null, isPermanent, code)
                 }
             } catch (e: Exception) {
-                Log.e("HAKOT_AUTH", "signIn exception: ${e.message}")
+                Log.e("HAKOT_AUTH", "refreshSession exception: ${e.message}")
+                return@withContext RefreshSessionResult(null, false, -1)
             } finally {
                 connection?.disconnect()
             }
-            null
         }
 
     suspend fun signOutRemote(accessToken: String): Boolean =
@@ -206,10 +223,11 @@ object SupabaseClient {
             }
         }
 
-    suspend fun fetchProfile(userId: String, accessToken: String): JSONObject? =
+    suspend fun fetchProfileResult(userId: String, accessToken: String): FetchProfileResult =
         withContext(Dispatchers.IO) {
-            if (userId.isBlank() || accessToken.isBlank()) return@withContext null
-            if (!isValidUuid(userId)) return@withContext null
+            if (userId.isBlank() || accessToken.isBlank() || !isValidUuid(userId)) {
+                return@withContext FetchProfileResult(null, true, 400)
+            }
 
             var connection: HttpURLConnection? = null
             try {
@@ -226,29 +244,31 @@ object SupabaseClient {
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
                     val arr = JSONArray(jsonText)
-                    // Strict verification: exactly one profile row must match authenticated user ID
                     if (arr.length() == 1) {
                         val profileObj = arr.getJSONObject(0)
                         val profileId = profileObj.optString("id")
                         if (profileId == userId && isValidUuid(profileId)) {
-                            return@withContext profileObj
-                        } else {
-                            Log.e("HAKOT_AUTH", "fetchProfile ID mismatch or invalid UUID")
+                            return@withContext FetchProfileResult(profileObj, false, code)
                         }
-                    } else {
-                        Log.e("HAKOT_AUTH", "fetchProfile returned ${arr.length()} rows (expected 1)")
                     }
+                    return@withContext FetchProfileResult(null, true, code)
                 } else {
                     val errText = readErrorStream(connection)
                     Log.e("HAKOT_AUTH", "fetchProfile failed with HTTP $code: $errText")
+                    val isPermanent = code in 401..403
+                    return@withContext FetchProfileResult(null, isPermanent, code)
                 }
             } catch (e: Exception) {
                 Log.e("HAKOT_AUTH", "fetchProfile exception: ${e.message}")
+                return@withContext FetchProfileResult(null, false, -1)
             } finally {
                 connection?.disconnect()
             }
-            null
         }
+
+    suspend fun fetchProfile(userId: String, accessToken: String): JSONObject? {
+        return fetchProfileResult(userId, accessToken).profile
+    }
 
     // ---------------------------------------------------------
     // CHECK SUPABASE CONNECTION
@@ -410,7 +430,8 @@ object SupabaseClient {
             var connection: HttpURLConnection? = null
 
             try {
-                val urlString = "$SUPABASE_URL/rest/v1/$tableName?select=*"
+                val separator = if (tableName.contains("?")) "&" else "?"
+                val urlString = "$SUPABASE_URL/rest/v1/$tableName${separator}select=*"
                 connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("apikey", SUPABASE_ANON_KEY)
@@ -564,6 +585,79 @@ object SupabaseClient {
             }
         } catch (e: Exception) {
             SupabaseInsertResult(false, -1, e.message ?: "Unknown update exception")
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    // ---------------------------------------------------------
+    // EXPLICIT EDGE FUNCTION INVOCATION (Requires user JWT)
+    // ---------------------------------------------------------
+
+    suspend fun invokeManagementEdgeFunction(
+        action: String,
+        applicationId: String?,
+        accessToken: String
+    ): SupabaseFetchResult = withContext(Dispatchers.IO) {
+        if (accessToken.isBlank()) {
+            return@withContext SupabaseFetchResult(
+                isSuccess = false,
+                statusCode = 401,
+                data = null,
+                errorMessage = "Missing authenticated user access token"
+            )
+        }
+        var connection: HttpURLConnection? = null
+        try {
+            val urlString = "$SUPABASE_URL/functions/v1/manage-account-applications"
+            connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                connectTimeout = 10000
+                readTimeout = 10000
+            }
+
+            val payload = JSONObject().apply {
+                put("action", action)
+                if (!applicationId.isNullOrBlank()) {
+                    put("applicationId", applicationId)
+                }
+            }
+
+            connection.outputStream.use { output ->
+                output.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode in 200..299) {
+                val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
+                val rootObj = JSONObject(jsonText)
+                val dataArray = rootObj.optJSONArray("data")
+                SupabaseFetchResult(
+                    isSuccess = true,
+                    statusCode = responseCode,
+                    data = dataArray ?: JSONArray(),
+                    errorMessage = null
+                )
+            } else {
+                val errorText = readErrorStream(connection)
+                SupabaseFetchResult(
+                    isSuccess = false,
+                    statusCode = responseCode,
+                    data = null,
+                    errorMessage = "HTTP $responseCode: $errorText"
+                )
+            }
+        } catch (e: Exception) {
+            SupabaseFetchResult(
+                isSuccess = false,
+                statusCode = -1,
+                data = null,
+                errorMessage = e.message ?: "Unknown Edge Function exception"
+            )
         } finally {
             connection?.disconnect()
         }

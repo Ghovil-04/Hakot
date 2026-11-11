@@ -383,37 +383,6 @@ fun RoleSelectionScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             Card(
-                onClick = { onSelectRole(UserRole.SYSTEM_OWNER) },
-                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.5.dp, RecycleYellow, RoundedCornerShape(18.dp))
-            ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(RecycleYellowContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(imageVector = Icons.Default.Key, contentDescription = "System Owner", tint = RecycleYellow, modifier = Modifier.size(28.dp))
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text("Platform System Owner", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextOnDarkPrimary)
-                        Text("Full system control & pending account approvals", fontSize = 11.sp, color = TextOnDarkSecondary)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Card(
                 onClick = { onSelectRole(UserRole.MUNICIPAL_ADMIN) },
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
                 shape = RoundedCornerShape(18.dp),
@@ -792,8 +761,8 @@ fun AdminLoginScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var emailInput by remember { mutableStateOf(if (targetRole == UserRole.DRIVER) "driver@hakot.gov.ph" else "m.lopez@nasugbu.gov.ph") }
-    var passwordInput by remember { mutableStateOf("admin123") }
+    var emailInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -913,25 +882,10 @@ fun AdminLoginScreen(
                             scope.launch {
                                 isLoading = true
                                 errorMessage = null
-                                val success = HakotRepository.login(context, emailInput, passwordInput)
+                                val success = HakotRepository.login(context, emailInput, passwordInput, targetRole)
                                 isLoading = false
                                 if (success) {
-                                    val actualRole = HakotRepository.currentAdminRole
-                                    if (targetRole == UserRole.SYSTEM_OWNER && actualRole != UserRole.SYSTEM_OWNER) {
-                                        HakotRepository.logout(context)
-                                        errorMessage = "Access Denied: Portal restricted to Platform System Owners."
-                                    } else if (targetRole == UserRole.MUNICIPAL_ADMIN && actualRole == UserRole.SYSTEM_OWNER) {
-                                        HakotRepository.logout(context)
-                                        errorMessage = "Access Denied: System Owners must sign in via the System Owner portal."
-                                    } else if ((actualRole != UserRole.MUNICIPAL_ADMIN && actualRole != UserRole.DISTRICT_ADMIN && actualRole != UserRole.SYSTEM_OWNER) && (targetRole == UserRole.MUNICIPAL_ADMIN || targetRole == UserRole.DISTRICT_ADMIN)) {
-                                        HakotRepository.logout(context)
-                                        errorMessage = "Access Denied: Account is registered as a Trucker."
-                                    } else if (actualRole != targetRole && targetRole == UserRole.DRIVER) {
-                                        HakotRepository.logout(context)
-                                        errorMessage = "Access Denied: Account is registered as an Administrator."
-                                    } else {
-                                        Toast.makeText(context, "Sign In Successful!", Toast.LENGTH_SHORT).show()
-                                    }
+                                    Toast.makeText(context, "Sign In Successful!", Toast.LENGTH_SHORT).show()
                                 } else {
                                     errorMessage = HakotRepository.lastLoginError ?: "Invalid credentials, inactive account, or network error."
                                 }
@@ -2194,6 +2148,7 @@ fun AccountRegistrationScreen(
     var officeInput by remember { mutableStateOf("Municipal Sanitation Office") }
     var positionInput by remember { mutableStateOf("Sanitation Inspector") }
     var requestedRole by remember { mutableStateOf(UserRole.MUNICIPAL_STAFF) }
+    var companyNameInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var isSubmitted by remember { mutableStateOf(false) }
@@ -2350,6 +2305,12 @@ fun AccountRegistrationScreen(
                             colors = FilterChipDefaults.filterChipColors(selectedContainerColor = EcoGreenContainer, selectedLabelColor = EcoGreenLight)
                         )
                         FilterChip(
+                            selected = requestedRole == UserRole.COMPANY_ADMIN,
+                            onClick = { requestedRole = UserRole.COMPANY_ADMIN },
+                            label = { Text("Company Admin", fontSize = 10.sp) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = EcoGreenContainer, selectedLabelColor = EcoGreenLight)
+                        )
+                        FilterChip(
                             selected = requestedRole == UserRole.MUNICIPAL_STAFF,
                             onClick = { requestedRole = UserRole.MUNICIPAL_STAFF },
                             label = { Text("Municipal Staff", fontSize = 10.sp) },
@@ -2360,6 +2321,18 @@ fun AccountRegistrationScreen(
                             onClick = { requestedRole = UserRole.DRIVER },
                             label = { Text("Driver", fontSize = 10.sp) },
                             colors = FilterChipDefaults.filterChipColors(selectedContainerColor = RecycleYellowContainer, selectedLabelColor = RecycleYellow)
+                        )
+                    }
+
+                    if (requestedRole == UserRole.COMPANY_ADMIN) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = companyNameInput,
+                            onValueChange = { companyNameInput = it; errorMessage = null },
+                            label = { Text("Company Name") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = EcoGreenPrimary, unfocusedBorderColor = DarkBorder, focusedTextColor = TextOnDarkPrimary, unfocusedTextColor = TextOnDarkPrimary),
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
 
@@ -2376,6 +2349,9 @@ fun AccountRegistrationScreen(
                             if (fullNameInput.isBlank() || emailInput.isBlank() || contactInput.isBlank() || municipalityInput.isBlank() || officeInput.isBlank() || positionInput.isBlank()) {
                                 Log.d("HAKOT_SUBMIT_UI", "Validation failed: required fields are blank.")
                                 errorMessage = "Please fill in all required registration fields."
+                            } else if (requestedRole == UserRole.COMPANY_ADMIN && companyNameInput.isBlank()) {
+                                Log.d("HAKOT_SUBMIT_UI", "Validation failed: company name is blank for Company Admin.")
+                                errorMessage = "Please enter a company name."
                             } else if (!Patterns.EMAIL_ADDRESS.matcher(emailInput.trim()).matches()) {
                                 Log.d("HAKOT_SUBMIT_UI", "Validation failed: invalid email format.")
                                 errorMessage = "Please enter a valid email address."
@@ -2391,7 +2367,8 @@ fun AccountRegistrationScreen(
                                         municipalityId = HakotRepository.activeOrganization.municipalityId,
                                         officeDepartment = officeInput.trim(),
                                         officialPosition = positionInput.trim(),
-                                        requestedRole = requestedRole
+                                        requestedRole = requestedRole,
+                                        companyName = companyNameInput
                                     )
                                     Log.d("HAKOT_SUBMIT_UI", "Received submission result: success=${result.first}, message=${result.second}")
                                     isSubmitting = false

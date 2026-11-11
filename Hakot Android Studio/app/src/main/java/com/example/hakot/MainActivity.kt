@@ -30,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.example.hakot.data.HakotRepository
 import com.example.hakot.ui.components.HakotBottomBar
 import com.example.hakot.ui.components.HakotTab
 import com.example.hakot.ui.screens.AdminScreen
@@ -47,13 +48,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             HakotTheme {
-                var showSplash by rememberSaveable { mutableStateOf(true) }
-
-                if (showSplash) {
-                    SplashScreen(onTimeout = { showSplash = false })
-                } else {
-                    HakotMainApp()
-                }
+                HakotMainApp()
             }
         }
     }
@@ -64,7 +59,7 @@ fun HakotMainApp() {
     // Save tab, search, and admin state across rotation
     var selectedTab by rememberSaveable { mutableStateOf(HakotTab.HOME) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var isAdminMode by rememberSaveable { mutableStateOf(false) }
+    var isAdminMode by rememberSaveable { mutableStateOf<Boolean>(HakotRepository.isAuthenticated) }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()

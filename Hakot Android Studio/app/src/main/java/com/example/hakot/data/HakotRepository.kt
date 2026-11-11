@@ -165,7 +165,7 @@ object HakotRepository {
             id = "tr_1",
             truckCode = "Hakot Truck #1",
             plateNumber = "ABK-8891",
-            driverName = "Mario Santos",
+            driverName = "Unassigned Driver",
             assignedRoute = "C. Alvarez to F. Alix Street Corridor",
             assignedBarangays = "C. Alvarez St → J.P. Laurel St → F. Alix St",
             destinationDumpsite = "Nasugbu MRF Facility",
@@ -246,25 +246,33 @@ object HakotRepository {
         // Check if token expires within 2 minutes
         if (System.currentTimeMillis() >= tokenExpiresAt - 120_000) {
             val tokenToRefresh = currentRefreshToken ?: return@withLock null
-            val resp = SupabaseClient.refreshSession(tokenToRefresh)
-            if (resp != null && resp.userId == currentUserId && SessionManager.isValidUuid(resp.userId)) {
-                // Persist new token pair FIRST before updating in-memory state
+            val refreshResult = SupabaseClient.refreshSession(tokenToRefresh)
+            val resp = refreshResult.tokenResponse
+            if (resp != null) {
+                if (resp.userId != currentUserId || !SessionManager.isValidUuid(resp.userId)) {
+                    Log.e("HAKOT_AUTH", "Token refresh user ID mismatch. Identity integrity failure.")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        SessionManager(context).clearSession()
+                    }
+                    currentAccessToken = null
+                    currentRefreshToken = null
+                    tokenExpiresAt = 0L
+                    currentUserId = null
+                    isAuthenticated = false
+                    authenticatedUser = null
+                    return@withLock null
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     val sessionManager = SessionManager(context)
                     val session = sessionManager.loadSession()
                     val userEmail = session?.email ?: ""
-                    if (userEmail.isBlank()) {
-                        sessionManager.clearSession()
-                        currentAccessToken = null
-                        currentRefreshToken = null
-                        tokenExpiresAt = 0L
-                        currentUserId = null
-                        isAuthenticated = false
-                        authenticatedUser = null
-                        return@withLock null
-                    }
-                    val saved = sessionManager.saveSession(UserSession(resp.accessToken, resp.refreshToken, resp.expiresAt, resp.userId, userEmail))
-                    if (!saved) {
+                    if (userEmail.isNotBlank()) {
+                        val saved = sessionManager.saveSession(UserSession(resp.accessToken, resp.refreshToken, resp.expiresAt, resp.userId, userEmail))
+                        if (!saved) {
+                            Log.e("HAKOT_AUTH", "Failed to save refreshed session locally. Aborting in-memory update.")
+                            return@withLock if (System.currentTimeMillis() < tokenExpiresAt) currentAccessToken else null
+                        }
+                    } else {
                         sessionManager.clearSession()
                         currentAccessToken = null
                         currentRefreshToken = null
@@ -279,24 +287,33 @@ object HakotRepository {
                 currentRefreshToken = resp.refreshToken
                 tokenExpiresAt = resp.expiresAt
             } else {
-                // Refresh failed or user ID mismatch: clear session safely
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    SessionManager(context).clearSession()
+                if (refreshResult.isPermanentFailure) {
+                    // Refresh failed permanently (HTTP 400/401/403): clear session safely
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        SessionManager(context).clearSession()
+                    }
+                    currentAccessToken = null
+                    currentRefreshToken = null
+                    tokenExpiresAt = 0L
+                    currentUserId = null
+                    isAuthenticated = false
+                    authenticatedUser = null
+                    return@withLock null
+                } else {
+                    // Temporary transport / network failure: preserve encrypted saved session, do not erase refresh token
+                    return@withLock if (System.currentTimeMillis() < tokenExpiresAt) currentAccessToken else null
                 }
-                currentAccessToken = null
-                currentRefreshToken = null
-                tokenExpiresAt = 0L
-                currentUserId = null
-                isAuthenticated = false
-                authenticatedUser = null
-                return@withLock null
             }
         }
         return@withLock currentAccessToken
     }
 
-    suspend fun login(context: Context, emailInput: String, passwordInput: String): Boolean {
-        logout(context)
+    suspend fun login(
+        context: Context,
+        emailInput: String,
+        passwordInput: String,
+        targetRole: UserRole
+    ): Boolean {
         lastLoginError = null
 
         val cleanEmail = emailInput.trim()
@@ -335,13 +352,25 @@ object HakotRepository {
         }
         val role = when (roleStr) {
             "system_owner" -> UserRole.SYSTEM_OWNER
-            "municipal_admin", "district_admin" -> UserRole.MUNICIPAL_ADMIN
+            "municipal_admin" -> UserRole.MUNICIPAL_ADMIN
+            "district_admin" -> UserRole.DISTRICT_ADMIN
+            "company_admin" -> UserRole.COMPANY_ADMIN
             "municipal_staff" -> UserRole.MUNICIPAL_STAFF
             "driver" -> UserRole.DRIVER
             else -> {
                 lastLoginError = "Login failed: Unrecognized role ($roleStr)."
                 return false
             }
+        }
+
+        // Validate portal authorization before saving session or authenticating
+        if (targetRole == UserRole.DRIVER && role != UserRole.DRIVER) {
+            lastLoginError = "Access denied: Account is registered as an Administrator. Please use the Admin Portal."
+            return false
+        }
+        if (targetRole != UserRole.DRIVER && role == UserRole.DRIVER) {
+            lastLoginError = "Access denied: Account is registered as a Trucker. Please use the Trucker Portal."
+            return false
         }
 
         val fullName = profileJson.optString("full_name")
@@ -352,20 +381,47 @@ object HakotRepository {
 
         val municipalityId = if (profileJson.isNull("municipality_id")) "" else profileJson.optString("municipality_id", "").let { if (it.equals("null", ignoreCase = true)) "" else it }
         val districtId = if (profileJson.isNull("district_id")) "" else profileJson.optString("district_id", "").let { if (it.equals("null", ignoreCase = true)) "" else it }
+        val companyId = if (profileJson.isNull("company_id")) "" else profileJson.optString("company_id", "").let { if (it.equals("null", ignoreCase = true)) "" else it }
 
-        if (role == UserRole.MUNICIPAL_ADMIN && (municipalityId.isBlank() || districtId.isBlank())) {
-            lastLoginError = "Access denied: Municipal Admin account requires municipality and district scope."
-            return false
+        when (role) {
+            UserRole.SYSTEM_OWNER,
+            UserRole.MUNICIPAL_STAFF,
+            UserRole.DRIVER -> {
+                // Supported roles without additional scope constraints
+            }
+            UserRole.MUNICIPAL_ADMIN -> {
+                if (!SessionManager.isValidUuid(municipalityId)) {
+                    lastLoginError = "Access denied: Municipal Admin account requires a valid municipality UUID."
+                    return false
+                }
+            }
+            UserRole.DISTRICT_ADMIN -> {
+                if (!SessionManager.isValidUuid(municipalityId) || !SessionManager.isValidUuid(districtId)) {
+                    lastLoginError = "Access denied: District Admin account requires valid municipality and district UUIDs."
+                    return false
+                }
+            }
+            UserRole.COMPANY_ADMIN -> {
+                if (!SessionManager.isValidUuid(municipalityId) || !SessionManager.isValidUuid(companyId)) {
+                    lastLoginError = "Access denied: Company Admin account requires valid municipality and company UUIDs."
+                    return false
+                }
+            }
+            else -> {
+                lastLoginError = "Access denied: Role is not an authenticated account."
+                return false
+            }
         }
 
         val profile = AdminUserProfile(
             userId = userId,
             fullName = fullName,
             email = cleanEmail,
-            municipalityOrgId = municipalityId.ifBlank { activeOrganization.municipalityId },
-            municipalityName = activeOrganization.name,
-            districtId = districtId.ifBlank { "dist_1" },
-            districtName = "District Assigned Scope",
+            municipalityOrgId = municipalityId,
+            municipalityName = if (municipalityId == activeOrganization.municipalityId) activeOrganization.name else "",
+            districtId = districtId,
+            districtName = "",
+            companyId = companyId,
             role = role,
             status = AdminStatus.ACTIVE,
             registrationDate = profileJson.optString("created_at", "Today"),
@@ -378,7 +434,6 @@ object HakotRepository {
             val saved = sessionManager.saveSession(UserSession(accessToken, authResp.refreshToken, authResp.expiresAt, userId, cleanEmail))
             if (!saved) {
                 lastLoginError = "Session storage failed: Unable to save secure session locally."
-                sessionManager.clearSession()
                 return false
             }
         }
@@ -416,12 +471,45 @@ object HakotRepository {
             return false
         }
 
-        val token = getValidAccessToken(context) ?: return false
-        val profileJson = SupabaseClient.fetchProfile(session.userId, token) ?: return false
+        currentAccessToken = session.accessToken
+        currentRefreshToken = session.refreshToken
+        tokenExpiresAt = session.expiresAt
+        currentUserId = session.userId
+
+        val token = getValidAccessToken(context)
+        if (token.isNullOrBlank()) {
+            currentAccessToken = null
+            currentRefreshToken = null
+            tokenExpiresAt = 0L
+            currentUserId = null
+            isAuthenticated = false
+            authenticatedUser = null
+            return false
+        }
+        val profileRes = SupabaseClient.fetchProfileResult(session.userId, token)
+        val profileJson = profileRes.profile
+        if (profileJson == null) {
+            if (profileRes.isPermanentFailure) {
+                sessionManager.clearSession()
+            }
+            currentAccessToken = null
+            currentRefreshToken = null
+            tokenExpiresAt = 0L
+            currentUserId = null
+            isAuthenticated = false
+            authenticatedUser = null
+            return false
+        }
 
         val profileId = profileJson.optString("id")
         if (profileId != session.userId || !SessionManager.isValidUuid(profileId)) {
             sessionManager.clearSession()
+            currentAccessToken = null
+            currentRefreshToken = null
+            tokenExpiresAt = 0L
+            currentUserId = null
+            isAuthenticated = false
+            authenticatedUser = null
             return false
         }
 
@@ -430,16 +518,30 @@ object HakotRepository {
 
         if (statusStr != "active") {
             sessionManager.clearSession()
+            currentAccessToken = null
+            currentRefreshToken = null
+            tokenExpiresAt = 0L
+            currentUserId = null
+            isAuthenticated = false
+            authenticatedUser = null
             return false
         }
 
         val role = when (roleStr) {
             "system_owner" -> UserRole.SYSTEM_OWNER
-            "municipal_admin", "district_admin" -> UserRole.MUNICIPAL_ADMIN
+            "municipal_admin" -> UserRole.MUNICIPAL_ADMIN
+            "district_admin" -> UserRole.DISTRICT_ADMIN
+            "company_admin" -> UserRole.COMPANY_ADMIN
             "municipal_staff" -> UserRole.MUNICIPAL_STAFF
             "driver" -> UserRole.DRIVER
             else -> {
                 sessionManager.clearSession()
+                currentAccessToken = null
+                currentRefreshToken = null
+                tokenExpiresAt = 0L
+                currentUserId = null
+                isAuthenticated = false
+                authenticatedUser = null
                 return false
             }
         }
@@ -447,25 +549,82 @@ object HakotRepository {
         val fullName = profileJson.optString("full_name")
         if (fullName.isBlank()) {
             sessionManager.clearSession()
+            currentAccessToken = null
+            currentRefreshToken = null
+            tokenExpiresAt = 0L
+            currentUserId = null
+            isAuthenticated = false
+            authenticatedUser = null
             return false
         }
 
         val municipalityId = if (profileJson.isNull("municipality_id")) "" else profileJson.optString("municipality_id", "").let { if (it.equals("null", ignoreCase = true)) "" else it }
         val districtId = if (profileJson.isNull("district_id")) "" else profileJson.optString("district_id", "").let { if (it.equals("null", ignoreCase = true)) "" else it }
+        val companyId = if (profileJson.isNull("company_id")) "" else profileJson.optString("company_id", "").let { if (it.equals("null", ignoreCase = true)) "" else it }
 
-        if (role == UserRole.MUNICIPAL_ADMIN && (municipalityId.isBlank() || districtId.isBlank())) {
-            sessionManager.clearSession()
-            return false
+        when (role) {
+            UserRole.SYSTEM_OWNER,
+            UserRole.MUNICIPAL_STAFF,
+            UserRole.DRIVER -> {
+                // Supported roles without additional scope constraints
+            }
+            UserRole.MUNICIPAL_ADMIN -> {
+                if (!SessionManager.isValidUuid(municipalityId)) {
+                    sessionManager.clearSession()
+                    currentAccessToken = null
+                    currentRefreshToken = null
+                    tokenExpiresAt = 0L
+                    currentUserId = null
+                    isAuthenticated = false
+                    authenticatedUser = null
+                    return false
+                }
+            }
+            UserRole.DISTRICT_ADMIN -> {
+                if (!SessionManager.isValidUuid(municipalityId) || !SessionManager.isValidUuid(districtId)) {
+                    sessionManager.clearSession()
+                    currentAccessToken = null
+                    currentRefreshToken = null
+                    tokenExpiresAt = 0L
+                    currentUserId = null
+                    isAuthenticated = false
+                    authenticatedUser = null
+                    return false
+                }
+            }
+            UserRole.COMPANY_ADMIN -> {
+                if (!SessionManager.isValidUuid(municipalityId) || !SessionManager.isValidUuid(companyId)) {
+                    sessionManager.clearSession()
+                    currentAccessToken = null
+                    currentRefreshToken = null
+                    tokenExpiresAt = 0L
+                    currentUserId = null
+                    isAuthenticated = false
+                    authenticatedUser = null
+                    return false
+                }
+            }
+            else -> {
+                sessionManager.clearSession()
+                currentAccessToken = null
+                currentRefreshToken = null
+                tokenExpiresAt = 0L
+                currentUserId = null
+                isAuthenticated = false
+                authenticatedUser = null
+                return false
+            }
         }
 
         val profile = AdminUserProfile(
             userId = session.userId,
             fullName = fullName,
             email = session.email,
-            municipalityOrgId = municipalityId.ifBlank { activeOrganization.municipalityId },
-            municipalityName = activeOrganization.name,
-            districtId = districtId.ifBlank { "dist_1" },
-            districtName = "District Assigned Scope",
+            municipalityOrgId = municipalityId,
+            municipalityName = if (municipalityId == activeOrganization.municipalityId) activeOrganization.name else "",
+            districtId = districtId,
+            districtName = "",
+            companyId = companyId,
             role = role,
             status = AdminStatus.ACTIVE,
             registrationDate = profileJson.optString("created_at", "Restored"),
@@ -620,7 +779,8 @@ object HakotRepository {
         municipalityId: String,
         officeDepartment: String,
         officialPosition: String,
-        requestedRole: UserRole
+        requestedRole: UserRole,
+        companyName: String = ""
     ): Pair<Boolean, String> {
         Log.d("HAKOT_SUBMIT_REPOSITORY", "submitAccountApplication called for requested role: ${requestedRole.name}")
         // Enforce role safety: System Owner cannot be requested via self-registration (Explicit Validation Failure)
@@ -637,6 +797,9 @@ object HakotRepository {
             put("office_department", officeDepartment)
             put("official_position", officialPosition)
             put("requested_role", requestedRole.name)
+            if (requestedRole == UserRole.COMPANY_ADMIN && companyName.isNotBlank()) {
+                put("company_name", companyName.trim())
+            }
             put("status", "PENDING")
         }
 
@@ -660,7 +823,7 @@ object HakotRepository {
         }
         val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
 
-        val fetchResult = SupabaseClient.fetchAuthenticatedTableRecords("account_applications?status=eq.PENDING", token)
+        val fetchResult = SupabaseClient.invokeManagementEdgeFunction("LIST_PENDING", null, token)
         if (fetchResult.isSuccess && fetchResult.data != null) {
             val jsonArray = fetchResult.data
             val list = mutableListOf<AccountApplication>()
@@ -716,22 +879,14 @@ object HakotRepository {
         }
         val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
 
-        val payload = JSONObject().apply {
-            put("status", newStatus.name)
-        }
-
-        val result = SupabaseClient.updateAuthenticatedTableRecord(
-            "account_applications",
-            "id=eq.$applicationId&status=eq.PENDING",
-            payload,
-            token
-        )
+        val action = if (newStatus == ApplicationStatus.APPROVED) "APPROVE" else "REJECT"
+        val result = SupabaseClient.invokeManagementEdgeFunction(action, applicationId, token)
 
         return if (result.isSuccess) {
             accountApplications.removeIf { it.applicationId == applicationId }
             Pair(true, "Application updated to ${newStatus.name} successfully.")
         } else {
-            Pair(false, "Failed to update application status: ${result.errorMessage ?: "Zero records updated or conflict"}")
+            Pair(false, "Failed to update application status: ${result.errorMessage ?: "Server-side processing error"}")
         }
     }
 
