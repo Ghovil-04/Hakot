@@ -48,6 +48,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -62,9 +65,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -527,12 +534,7 @@ fun HomeScreen(
             AnonymousReportModal(
                 initialType = selectedReportType,
                 onDismiss = { showReportDialog = false },
-                onSubmit = { type, loc, desc ->
-                    HakotRepository.addAnonymousReport(
-                        type = type,
-                        locationName = loc,
-                        description = desc
-                    )
+                onSubmitSuccess = { refCode ->
                     showReportDialog = false
                     isSheetExpanded = false
                 }
@@ -650,16 +652,22 @@ fun WasteCategoryItem(
 fun AnonymousReportModal(
     initialType: ReportType,
     onDismiss: () -> Unit,
-    onSubmit: (ReportType, String, String) -> Unit
+    onSubmitSuccess: (refCode: String) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var selectedType by remember { mutableStateOf(initialType) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
     var locationInput by remember { mutableStateOf("J.P. Laurel Street, Nasugbu") }
     var descriptionInput by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scrollState = rememberScrollState()
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
         sheetState = sheetState,
         containerColor = DarkSurface,
         scrimColor = Color.Black.copy(alpha = 0.6f)
@@ -668,6 +676,7 @@ fun AnonymousReportModal(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
+                .verticalScroll(scrollState)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -694,67 +703,117 @@ fun AnonymousReportModal(
                 text = "No personal details or profile required. Your report alerts the sanitation team.",
                 fontSize = 12.sp,
                 color = TextOnDarkSecondary,
-                modifier = Modifier.padding(vertical = 6.dp)
+                modifier = Modifier.padding(vertical = 4.dp)
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Issue Type Selection Chips
+            // Compact Dropdown Category Selector
             Text("Issue Category:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextOnDarkPrimary)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ReportType.entries.forEach { type ->
-                    val isSelected = selectedType == type
-                    Surface(
-                        onClick = { selectedType = type },
-                        color = if (isSelected) HazardousRedContainer else DarkSurfaceCard,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(
-                                width = 1.dp,
-                                color = if (isSelected) HazardousRed else DarkBorder,
-                                shape = RoundedCornerShape(12.dp)
-                            )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Surface(
+                    onClick = { if (!isSubmitting) isCategoryDropdownExpanded = !isCategoryDropdownExpanded },
+                    color = HazardousRedContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, HazardousRed, RoundedCornerShape(12.dp))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ReportProblem,
-                                contentDescription = type.title,
-                                tint = if (isSelected) HazardousRed else TextOnDarkSecondary,
-                                modifier = Modifier.size(18.dp)
+                                contentDescription = selectedType.title,
+                                tint = HazardousRed,
+                                modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = type.title,
+                                    text = selectedType.title,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextOnDarkPrimary
                                 )
                                 Text(
-                                    text = type.description,
+                                    text = selectedType.description,
                                     fontSize = 10.sp,
                                     color = TextOnDarkSecondary
                                 )
                             }
                         }
+
+                        Icon(
+                            imageVector = if (isCategoryDropdownExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Dropdown Arrow",
+                            tint = TextOnDarkSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = isCategoryDropdownExpanded,
+                    onDismissRequest = { isCategoryDropdownExpanded = false },
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .background(DarkSurfaceCard)
+                ) {
+                    ReportType.entries.forEach { type ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = type.title,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (type == selectedType) HazardousRed else TextOnDarkPrimary
+                                    )
+                                    Text(
+                                        text = type.description,
+                                        fontSize = 10.sp,
+                                        color = TextOnDarkSecondary
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.ReportProblem,
+                                    contentDescription = type.title,
+                                    tint = if (type == selectedType) HazardousRed else TextOnDarkMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                selectedType = type
+                                isCategoryDropdownExpanded = false
+                            }
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Location Input Field
             Text("Location / Street / Barangay:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextOnDarkPrimary)
             OutlinedTextField(
                 value = locationInput,
-                onValueChange = { locationInput = it },
+                onValueChange = {
+                    locationInput = it
+                    errorMessage = null
+                },
                 singleLine = true,
+                enabled = !isSubmitting,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = EcoGreenPrimary,
                     unfocusedBorderColor = DarkBorder,
@@ -768,12 +827,18 @@ fun AnonymousReportModal(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Description Input Field
+            // Description Multiline Input Field
             Text("Details / Notes (Optional):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextOnDarkPrimary)
             OutlinedTextField(
                 value = descriptionInput,
-                onValueChange = { descriptionInput = it },
-                placeholder = { Text("e.g. No collection route assigned to our street", color = TextOnDarkMuted, fontSize = 12.sp) },
+                onValueChange = {
+                    descriptionInput = it
+                    errorMessage = null
+                },
+                minLines = 3,
+                maxLines = 5,
+                enabled = !isSubmitting,
+                placeholder = { Text("Describe the waste collection issue or concern in detail...", color = TextOnDarkMuted, fontSize = 12.sp) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = EcoGreenPrimary,
                     unfocusedBorderColor = DarkBorder,
@@ -785,29 +850,67 @@ fun AnonymousReportModal(
                     .padding(top = 4.dp)
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            errorMessage?.let { err ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(err, color = HazardousRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Submit Button
             Button(
                 onClick = {
-                    if (locationInput.isNotBlank()) {
-                        onSubmit(selectedType, locationInput, descriptionInput)
+                    if (locationInput.isBlank()) {
+                        errorMessage = "Please specify a location or street name."
+                        return@Button
+                    }
+                    scope.launch {
+                        isSubmitting = true
+                        errorMessage = null
+                        val result = HakotRepository.addAnonymousReport(
+                            type = selectedType,
+                            locationName = locationInput.trim(),
+                            description = descriptionInput.trim()
+                        )
+                        isSubmitting = false
+                        if (result.first) {
+                            Toast.makeText(context, result.second, Toast.LENGTH_LONG).show()
+                            onSubmitSuccess(result.second)
+                        } else {
+                            errorMessage = result.second
+                        }
                     }
                 },
+                enabled = !isSubmitting,
                 colors = ButtonDefaults.buttonColors(containerColor = HazardousRed),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text(
-                    text = "Submit Anonymous Report",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Submitting to Supabase...",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        text = "🚩 SUBMIT ANONYMOUS REPORT",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 }
