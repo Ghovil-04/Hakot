@@ -1,5 +1,6 @@
 package com.example.hakot.data
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -136,8 +137,12 @@ object SupabaseClient {
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
                     return@withContext parseAuthResponse(jsonText)
+                } else {
+                    val errText = readErrorStream(connection)
+                    Log.e("HAKOT_AUTH", "signIn failed with HTTP $code: $errText")
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e("HAKOT_AUTH", "signIn exception: ${e.message}")
             } finally {
                 connection?.disconnect()
             }
@@ -168,8 +173,12 @@ object SupabaseClient {
                 if (code in 200..299) {
                     val jsonText = connection.inputStream.bufferedReader().use { it.readText() }
                     return@withContext parseAuthResponse(jsonText)
+                } else {
+                    val errText = readErrorStream(connection)
+                    Log.e("HAKOT_AUTH", "signIn failed with HTTP $code: $errText")
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e("HAKOT_AUTH", "signIn exception: ${e.message}")
             } finally {
                 connection?.disconnect()
             }
@@ -223,10 +232,18 @@ object SupabaseClient {
                         val profileId = profileObj.optString("id")
                         if (profileId == userId && isValidUuid(profileId)) {
                             return@withContext profileObj
+                        } else {
+                            Log.e("HAKOT_AUTH", "fetchProfile ID mismatch or invalid UUID")
                         }
+                    } else {
+                        Log.e("HAKOT_AUTH", "fetchProfile returned ${arr.length()} rows (expected 1)")
                     }
+                } else {
+                    val errText = readErrorStream(connection)
+                    Log.e("HAKOT_AUTH", "fetchProfile failed with HTTP $code: $errText")
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e("HAKOT_AUTH", "fetchProfile exception: ${e.message}")
             } finally {
                 connection?.disconnect()
             }
@@ -317,6 +334,64 @@ object SupabaseClient {
                 connection?.disconnect()
             }
         }
+
+    // ---------------------------------------------------------
+    // EXPLICIT PUBLIC ANONYMOUS INSERT (For Anonymous Reports)
+    // ---------------------------------------------------------
+
+    suspend fun insertPublicTableRecord(
+        tableName: String,
+        jsonPayload: JSONObject
+    ): SupabaseInsertResult = withContext(Dispatchers.IO) {
+        Log.d("HAKOT_SUPABASE_INSERT", "insertPublicTableRecord started for table: $tableName")
+        var connection: HttpURLConnection? = null
+
+        try {
+            val urlString = "$SUPABASE_URL/rest/v1/$tableName"
+            connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                // Send publishable key via apikey header ONLY; do not send as Authorization: Bearer for anonymous requests
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Prefer", "return=minimal")
+                doOutput = true
+                connectTimeout = 5000
+                readTimeout = 5000
+            }
+
+            Log.d("HAKOT_SUPABASE_INSERT", "Executing HTTP POST request to $urlString")
+            connection.outputStream.use { output ->
+                output.write(jsonPayload.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            val responseCode = connection.responseCode
+            Log.d("HAKOT_SUPABASE_INSERT", "Received HTTP response for $tableName: status code $responseCode")
+            if (responseCode in 200..299) {
+                SupabaseInsertResult(
+                    isSuccess = true,
+                    statusCode = responseCode,
+                    errorMessage = null
+                )
+            } else {
+                val errorText = readErrorStream(connection)
+                SupabaseInsertResult(
+                    isSuccess = false,
+                    statusCode = responseCode,
+                    errorMessage = "HTTP $responseCode: $errorText"
+                )
+            }
+
+        } catch (e: Exception) {
+            Log.e("HAKOT_SUPABASE_INSERT", "Exception during insertPublicTableRecord for $tableName: ${e.javaClass.simpleName} - ${e.message}")
+            SupabaseInsertResult(
+                isSuccess = false,
+                statusCode = -1,
+                errorMessage = e.message ?: "Unknown insert exception"
+            )
+        } finally {
+            connection?.disconnect()
+        }
+    }
 
     // ---------------------------------------------------------
     // EXPLICIT AUTHENTICATED FETCH (Requires user JWT)
@@ -432,6 +507,63 @@ object SupabaseClient {
                 statusCode = -1,
                 errorMessage = e.message ?: "Unknown insert exception"
             )
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    // ---------------------------------------------------------
+    // EXPLICIT AUTHENTICATED UPDATE (Requires user JWT & PATCH)
+    // ---------------------------------------------------------
+
+    suspend fun updateAuthenticatedTableRecord(
+        tableName: String,
+        queryFilter: String,
+        jsonPayload: JSONObject,
+        accessToken: String
+    ): SupabaseInsertResult = withContext(Dispatchers.IO) {
+        if (accessToken.isBlank()) {
+            return@withContext SupabaseInsertResult(
+                isSuccess = false,
+                statusCode = 401,
+                errorMessage = "Missing authenticated user access token"
+            )
+        }
+        var connection: HttpURLConnection? = null
+        try {
+            val urlString = "$SUPABASE_URL/rest/v1/$tableName?$queryFilter"
+            connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                requestMethod = "PATCH"
+                setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                setRequestProperty("Authorization", "Bearer $accessToken")
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Prefer", "return=representation")
+                doOutput = true
+                connectTimeout = 5000
+                readTimeout = 5000
+            }
+            connection.outputStream.use { output ->
+                output.write(jsonPayload.toString().toByteArray(Charsets.UTF_8))
+            }
+            val responseCode = connection.responseCode
+            if (responseCode in 200..299) {
+                val responseText = try {
+                    connection.inputStream?.bufferedReader()?.use { it.readText() } ?: "[]"
+                } catch (_: Exception) {
+                    "[]"
+                }
+                val jsonArray = try { JSONArray(responseText) } catch (_: Exception) { JSONArray() }
+                if (jsonArray.length() == 1) {
+                    SupabaseInsertResult(true, responseCode, null)
+                } else {
+                    SupabaseInsertResult(false, responseCode, "Update failed: Server updated ${jsonArray.length()} rows instead of exactly 1.")
+                }
+            } else {
+                val errorText = readErrorStream(connection)
+                SupabaseInsertResult(false, responseCode, "HTTP $responseCode: $errorText")
+            }
+        } catch (e: Exception) {
+            SupabaseInsertResult(false, -1, e.message ?: "Unknown update exception")
         } finally {
             connection?.disconnect()
         }

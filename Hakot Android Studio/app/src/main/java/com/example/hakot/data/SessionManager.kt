@@ -3,6 +3,7 @@ package com.example.hakot.data
 import android.content.Context
 import android.os.Build
 import android.util.AtomicFile
+import android.util.Log
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.annotation.RequiresApi
@@ -11,7 +12,6 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.security.KeyStore
-import java.security.SecureRandom
 import java.util.regex.Pattern
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -56,8 +56,15 @@ class SessionManager(private val context: Context) {
         try {
             val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
             if (keyStore.containsAlias(keyAlias)) {
-                val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
-                if (entry != null) return entry.secretKey
+                try {
+                    val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
+                    if (entry != null) return entry.secretKey
+                } catch (e: Exception) {
+                    Log.w("HAKOT_SESSION", "Existing Keystore key alias invalid or corrupted: ${e.javaClass.simpleName} - ${e.message}. Deleting alias.")
+                    try {
+                        keyStore.deleteEntry(keyAlias)
+                    } catch (_: Exception) {}
+                }
             }
             if (!allowCreation) return null
 
@@ -73,35 +80,48 @@ class SessionManager(private val context: Context) {
 
             keyGenerator.init(parameterSpec)
             return keyGenerator.generateKey()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("HAKOT_SESSION", "Failed to get or generate Android Keystore key: ${e.javaClass.simpleName} - ${e.message}")
             return null
         }
     }
 
     private fun clearSessionInternal() {
         try {
-            // AtomicFile.delete() handles both base file and its internal backup (.bak) state
             atomicFile.delete()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("HAKOT_SESSION", "Failed to clear session file: ${e.javaClass.simpleName}")
         }
     }
 
     suspend fun saveSession(session: UserSession): Boolean = globalMutex.withLock {
         try {
             if (session.accessToken.isBlank() || session.refreshToken.isBlank() || session.expiresAt <= 0L || session.email.isBlank()) {
+                Log.e("HAKOT_SESSION", "saveSession failed: Invalid session parameters (blank token, refresh token, email, or invalid expiry).")
                 return@withLock false
             }
             if (!isValidUuid(session.userId)) {
+                Log.e("HAKOT_SESSION", "saveSession failed: Invalid userId UUID format.")
                 return@withLock false
             }
 
+            // Ensure parent directory exists
+            sessionFile.parentFile?.mkdirs()
+
             // Allow key creation when saving a valid session
-            val secretKey = getSecretKey(allowCreation = true) ?: return@withLock false
+            val secretKey = getSecretKey(allowCreation = true)
+            if (secretKey == null) {
+                Log.e("HAKOT_SESSION", "saveSession failed: SecretKey could not be retrieved or generated from Android Keystore.")
+                return@withLock false
+            }
+
             val cipher = Cipher.getInstance(transformation)
-            val iv = ByteArray(ivLengthBytes)
-            SecureRandom().nextBytes(iv)
-            val spec = GCMParameterSpec(tagLengthBits, iv)
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey, spec)
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+            val iv = cipher.iv
+            if (iv == null || iv.size != ivLengthBytes) {
+                Log.e("HAKOT_SESSION", "saveSession failed: Generated IV is null or invalid length (${iv?.size})")
+                return@withLock false
+            }
 
             val json = JSONObject().apply {
                 put("accessToken", session.accessToken)
@@ -114,7 +134,13 @@ class SessionManager(private val context: Context) {
 
             val ciphertext = cipher.doFinal(json.toString().toByteArray(Charsets.UTF_8))
 
-            val outputStream = atomicFile.startWrite()
+            val outputStream = try {
+                atomicFile.startWrite()
+            } catch (e: Exception) {
+                Log.e("HAKOT_SESSION", "AtomicFile startWrite failed: ${e.javaClass.simpleName} - ${e.message}")
+                throw e
+            }
+
             try {
                 outputStream.write(iv)
                 outputStream.write(ciphertext)
@@ -122,10 +148,12 @@ class SessionManager(private val context: Context) {
                 atomicFile.finishWrite(outputStream)
                 return@withLock true
             } catch (e: Exception) {
+                Log.e("HAKOT_SESSION", "AtomicFile write or finishWrite failed: ${e.javaClass.simpleName} - ${e.message}")
                 atomicFile.failWrite(outputStream)
                 throw e
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("HAKOT_SESSION", "saveSession general exception: ${e.javaClass.simpleName} - ${e.message}")
             return@withLock false
         }
     }
@@ -138,10 +166,14 @@ class SessionManager(private val context: Context) {
                 return@withLock null
             }
 
-            // Allow AtomicFile.readFully() to perform its own recovery behavior (e.g. reading from .bak if base file missing)
+            if (!sessionFile.exists()) {
+                return@withLock null
+            }
+
             val bytes = try {
                 atomicFile.readFully()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w("HAKOT_SESSION", "AtomicFile readFully failed: ${e.javaClass.simpleName} - ${e.message}")
                 clearSessionInternal()
                 return@withLock null
             }
@@ -189,8 +221,8 @@ class SessionManager(private val context: Context) {
                 userId = userId,
                 email = email
             )
-        } catch (_: Exception) {
-            // Corrupted payload, missing key, or AEADBadTagException: fail closed
+        } catch (e: Exception) {
+            Log.e("HAKOT_SESSION", "loadSession exception: ${e.javaClass.simpleName} - ${e.message}")
             clearSessionInternal()
             return@withLock null
         }

@@ -41,7 +41,10 @@ enum class TruckStatus(val label: String) {
 }
 
 enum class UserRole(val label: String) {
+    SYSTEM_OWNER("Platform System Owner"),
+    MUNICIPAL_ADMIN("Municipal Administrator"),
     DISTRICT_ADMIN("District Administrator"),
+    MUNICIPAL_STAFF("Municipal Staff / Inspector"),
     DRIVER("Truck Operator / Driver"),
     RESIDENT("Resident (Anonymous)")
 }
@@ -53,6 +56,14 @@ enum class AdminStatus(val label: String) {
     REVOKED("Revoked")
 }
 
+enum class SegmentProgressStatus(val label: String, val colorHex: Long) {
+    NOT_STARTED("Not Started", 0xFF3B82F6),
+    IN_PROGRESS("In Progress", 0xFFF59E0B),
+    COMPLETED("Completed", 0xFF10B981),
+    SKIPPED("Skipped", 0xFF6B7280),
+    BLOCKED("Road Blocked", 0xFFEF4444)
+}
+
 enum class OrganizationType(val label: String) {
     MUNICIPALITY("Municipality / LGU"),
     DISTRICT("District / City Zone"),
@@ -61,7 +72,8 @@ enum class OrganizationType(val label: String) {
 }
 
 data class OrganizationConfig(
-    val id: String,
+    val organizationKey: String = "org_nasugbu_lgu",
+    val municipalityId: String = "cb394eb7-a8b7-45f2-a314-3926baeab31f",
     val name: String,
     val type: OrganizationType,
     val province: String,
@@ -70,6 +82,13 @@ data class OrganizationConfig(
     val coveredBarangays: List<String>,
     val adminContactEmail: String,
     val adminContactPhone: String
+) {
+    val id: String get() = organizationKey
+}
+
+data class BarangayItem(
+    val id: String,
+    val name: String
 )
 
 data class AdminUserProfile(
@@ -80,28 +99,39 @@ data class AdminUserProfile(
     val municipalityName: String,
     val districtId: String,
     val districtName: String,
-    val role: UserRole = UserRole.DISTRICT_ADMIN,
+    val role: UserRole = UserRole.MUNICIPAL_ADMIN,
     var status: AdminStatus = AdminStatus.ACTIVE,
     val registrationDate: String,
-    val lastActivity: String = "Just now"
+    val lastActivity: String = "Just now",
+    val positionTitle: String = "Sanitation Official",
+    val officeDepartment: String = "Municipal Waste Management"
 )
 
-data class DistrictAdminInvitation(
+data class AccountInvitation(
     val invitationId: String,
     val codeHash: String,
-    val rawCodeDisplay: String,
     val intendedEmail: String,
-    val intendedAdminName: String,
-    val municipalityOrgId: String,
-    val assignedDistrictId: String,
-    val assignedDistrictName: String,
-    val assignedRole: UserRole = UserRole.DISTRICT_ADMIN,
+    val intendedName: String,
+    val contactNumber: String,
+    val municipalityId: String,
+    val municipalityName: String,
+    val assignedRole: UserRole = UserRole.MUNICIPAL_ADMIN,
+    val positionTitle: String = "Municipal Official",
+    val officeDepartment: String = "Sanitation Department",
     val createdByAuthorityOffice: String = "Nasugbu Municipal Sanitation Office",
     val createdAtMillis: Long,
     val expiresAtMillis: Long,
     var redeemedAtMillis: Long? = null,
     var status: AdminStatus = AdminStatus.PENDING_INVITATION
-)
+) {
+    val codeHashDisplay: String get() = codeHash
+    val rawCodeDisplay: String get() = "INV-${invitationId.takeLast(6).uppercase()}"
+    val intendedAdminName: String get() = intendedName
+    val municipalityOrgId: String get() = municipalityId
+    val assignedDistrictId: String get() = "dist_nasugbu"
+    val assignedDistrictName: String get() = "Nasugbu Scope"
+}
+typealias DistrictAdminInvitation = AccountInvitation
 
 data class AuditLogEntry(
     val id: String,
@@ -109,6 +139,44 @@ data class AuditLogEntry(
     val action: String,
     val targetRecord: String,
     val timestampMillis: Long
+)
+
+data class StreetSegment(
+    val segmentId: String,
+    val streetName: String,
+    val barangayId: String,
+    val barangayName: String,
+    val municipalityOrgId: String,
+    val roadType: String = "PRIMARY_STREET",
+    val geoPoints: List<Pair<Double, Double>>,
+    val connectedSegmentIds: List<String> = emptyList(),
+    val dataSource: String = "PostGIS EPSG:4326 WGS84"
+)
+
+data class RouteSegmentJunction(
+    val routeId: String,
+    val segmentId: String,
+    val sequenceOrder: Int,
+    val traversalDirection: String = "FORWARD"
+)
+
+data class CollectionProgressRecord(
+    val scheduleId: String,
+    val segmentId: String,
+    var status: SegmentProgressStatus = SegmentProgressStatus.NOT_STARTED,
+    var confirmedByUserId: String = "m.lopez@nasugbu.gov.ph",
+    var confirmedAtMillis: Long = System.currentTimeMillis()
+)
+
+data class TruckGpsTrailPoint(
+    val id: String,
+    val truckId: String,
+    val scheduleId: String,
+    val latitude: Double,
+    val longitude: Double,
+    val timestampMillis: Long,
+    val accuracyMeters: Float = 3.5f,
+    val speedKmH: Int = 22
 )
 
 data class Announcement(
@@ -130,7 +198,7 @@ data class Dumpsite(
     val address: String = "J.P. Laurel St, Nasugbu, Batangas",
     val capacityPercent: Int = 65,
     val operatingHours: String = "6:00 AM - 6:00 PM",
-    val acceptedWasteTypes: String = "General Household, Recyclables & Compost",
+    val acceptedWasteTypes: String = "General Household, Compostables & Recyclables",
     val isOpenNow: Boolean = true,
     val contactNumber: String = "(043) 723-HAKOT"
 ) {
@@ -227,6 +295,9 @@ data class Route(
     val scheduledDate: String = "Today",
     val destinationDumpsite: String = "Nasugbu MRF Facility"
 ) {
+    val routeNameProperty: String get() = routeName
+    val streetProperty: List<String> get() = street
+
     fun setRoute(barangay: String, streets: List<String>) {
         if (barangay.isNotBlank()) {
             this.routeName = "$routeName - $barangay"
@@ -254,7 +325,8 @@ data class ScheduleItem(
     val endTime: LocalTime,
     val wasteCategory: WasteCategory,
     val truckAssigned: String,
-    val status: String
+    val status: String,
+    val barangayId: String = "brgy_041019001"
 )
 
 data class ReportMessage(
@@ -273,12 +345,31 @@ data class AnonymousReport(
     val accessToken: String = "AUTH-${(System.currentTimeMillis() % 10000)}",
     val reportType: ReportType,
     val locationName: String,
-    val latitude: Double,
-    val longitude: Double,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val description: String,
     val timestampMillis: Long,
     var status: ReportStatus = ReportStatus.SUBMITTED,
     val assignedOffice: String = reportType.targetOffice,
     var assignedHandlerName: String = "Unassigned Handler",
     var resolutionDetails: String = ""
+)
+
+enum class ApplicationStatus(val label: String) {
+    PENDING("Pending System Owner Review"),
+    APPROVED("Approved"),
+    REJECTED("Rejected")
+}
+
+data class AccountApplication(
+    val applicationId: String,
+    val fullName: String,
+    val email: String,
+    val contactNumber: String,
+    val municipality: String,
+    val officeDepartment: String,
+    val officialPosition: String,
+    val requestedRole: UserRole, // MUNICIPAL_ADMIN, MUNICIPAL_STAFF, DRIVER (Never SYSTEM_OWNER)
+    var status: ApplicationStatus = ApplicationStatus.PENDING,
+    val createdAtMillis: Long = System.currentTimeMillis()
 )
