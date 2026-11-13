@@ -17,6 +17,7 @@ import com.example.hakot.model.ApplicationStatus
 import com.example.hakot.model.AuditLogEntry
 import com.example.hakot.model.CollectionRoute
 import com.example.hakot.model.DistrictAdminInvitation
+import com.example.hakot.model.DriverProfile
 import com.example.hakot.model.Dumpsite
 import com.example.hakot.model.GarbageTruck
 import com.example.hakot.model.OrganizationConfig
@@ -30,7 +31,9 @@ import com.example.hakot.model.UserRole
 import com.example.hakot.model.WasteCategory
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.security.SecureRandom
 import java.time.Instant
 import java.time.LocalDate
@@ -161,22 +164,10 @@ object HakotRepository {
         )
     )
 
-    val trucks = mutableStateListOf<GarbageTruck>(
-        GarbageTruck(
-            id = "tr_1",
-            truckCode = "Hakot Truck #1",
-            plateNumber = "ABK-8891",
-            driverName = "Unassigned Driver",
-            assignedRoute = "C. Alvarez to F. Alix Street Corridor",
-            assignedBarangays = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-            destinationDumpsite = "Nasugbu MRF Facility",
-            latitude = 14.0715,
-            longitude = 120.6255,
-            status = TruckStatus.ACTIVE_ON_ROUTE,
-            speedKmH = 22,
-            lastGpsUpdate = "Live - 1 min ago"
-        )
-    )
+    val trucks = mutableStateListOf<GarbageTruck>()
+    val drivers = mutableStateListOf<DriverProfile>()
+    var driversLoadError by mutableStateOf<String?>(null)
+    var isDriversLoading by mutableStateOf(false)
 
     val routes = mutableStateListOf<CollectionRoute>(
         CollectionRoute(
@@ -203,28 +194,10 @@ object HakotRepository {
 
     val reports = mutableStateListOf<AnonymousReport>()
     val schedules = mutableStateListOf<ScheduleItem>()
-
-    init {
-        generateDefaultSchedules()
-    }
-
-    private fun generateDefaultSchedules() {
-        val currDate = LocalDate.now()
-        schedules.clear()
-        schedules.add(
-            ScheduleItem(
-                id = "sch_1",
-                barangay = "C. Alvarez St → J.P. Laurel St → F. Alix St",
-                routeName = "C. Alvarez to F. Alix Street Corridor",
-                date = currDate,
-                startTime = LocalTime.of(8, 0),
-                endTime = LocalTime.of(11, 30),
-                wasteCategory = WasteCategory.GENERAL_WASTE,
-                truckAssigned = "Hakot Truck #1 (ABK-8891)",
-                status = "On Track"
-            )
-        )
-    }
+    var schedulesLoadError by mutableStateOf<String?>(null)
+    var isSchedulesLoading by mutableStateOf(false)
+    var trucksLoadError by mutableStateOf<String?>(null)
+    var isTrucksLoading by mutableStateOf(false)
 
     suspend fun getValidAccessToken(context: Context): String? = refreshMutex.withLock {
         if (currentAccessToken.isNullOrBlank() || currentUserId.isNullOrBlank()) {
@@ -313,7 +286,7 @@ object HakotRepository {
         context: Context,
         emailInput: String,
         passwordInput: String,
-        targetRole: UserRole
+        targetRole: UserRole? = null
     ): Boolean {
         lastLoginError = null
 
@@ -364,14 +337,16 @@ object HakotRepository {
             }
         }
 
-        // Validate portal authorization before saving session or authenticating
-        if (targetRole == UserRole.DRIVER && role != UserRole.DRIVER) {
-            lastLoginError = "Access denied: Account is registered as an Administrator. Please use the Admin Portal."
-            return false
-        }
-        if (targetRole != UserRole.DRIVER && role == UserRole.DRIVER) {
-            lastLoginError = "Access denied: Account is registered as a Trucker. Please use the Trucker Portal."
-            return false
+        // Validate portal authorization if targetRole is specified
+        if (targetRole != null) {
+            if (targetRole == UserRole.DRIVER && role != UserRole.DRIVER) {
+                lastLoginError = "Access denied: Account is registered as an Administrator. Please use the Admin Portal."
+                return false
+            }
+            if (targetRole != UserRole.DRIVER && role == UserRole.DRIVER) {
+                lastLoginError = "Access denied: Account is registered as a Trucker. Please use the Trucker Portal."
+                return false
+            }
         }
 
         val fullName = profileJson.optString("full_name")
@@ -781,38 +756,145 @@ object HakotRepository {
         officeDepartment: String,
         officialPosition: String,
         requestedRole: UserRole,
-        companyName: String = ""
+        companyName: String = "",
+        organizationType: String = "LGU",
+        organizationName: String = "",
+        repFullName: String = "",
+        repPosition: String = "",
+        repContactNumber: String = "",
+        certDocumentUrl: String = ""
     ): Pair<Boolean, String> {
-        Log.d("HAKOT_SUBMIT_REPOSITORY", "submitAccountApplication called for requested role: ${requestedRole.name}")
-        // Enforce role safety: System Owner cannot be requested via self-registration (Explicit Validation Failure)
+        Log.d("HAKOT_SUBMIT_REPOSITORY", "submitAccountApplication called for requested role: ${requestedRole.name}, orgType: $organizationType")
+        // Enforce role safety: System Owner cannot be requested via self-registration
         if (requestedRole == UserRole.SYSTEM_OWNER) {
             Log.w("HAKOT_SUBMIT_REPOSITORY", "Registration rejected: System Owner requested.")
             return Pair(false, "Registration for Platform System Owner is restricted and cannot be requested.")
         }
 
+        val cleanOrgType = if (organizationType.equals("PROVIDER", ignoreCase = true)) "PROVIDER" else "LGU"
+
         val payload = JSONObject().apply {
-            put("full_name", fullName)
-            put("email", email)
-            put("contact_number", contactNumber)
-            put("municipality_id", municipalityId.ifBlank { activeOrganization.municipalityId })
-            put("office_department", officeDepartment)
-            put("official_position", officialPosition)
-            put("requested_role", requestedRole.name)
-            if (requestedRole == UserRole.COMPANY_ADMIN && companyName.isNotBlank()) {
-                put("company_name", companyName.trim())
-            }
-            put("status", "PENDING")
+            put("organizationType", cleanOrgType)
+            put("organizationName", organizationName.trim())
+            put("email", email.trim())
+            put("repFullName", (repFullName.ifBlank { fullName }).trim())
+            put("repPosition", (repPosition.ifBlank { officialPosition }).trim())
+            put("contactNumber", contactNumber.trim())
+            put("municipalityId", municipalityId.ifBlank { activeOrganization.municipalityId })
+            put("requestedMunicipalities", JSONArray())
+            put("certDocumentUrl", certDocumentUrl.trim())
+            put("officeDepartment", officeDepartment.trim())
+            put("officialPosition", officialPosition.trim())
         }
 
-        Log.d("HAKOT_SUBMIT_REPOSITORY", "Calling SupabaseClient.insertPublicTableRecord for account_applications")
-        val result = SupabaseClient.insertPublicTableRecord("account_applications", payload)
-        Log.d("HAKOT_SUBMIT_REPOSITORY", "SupabaseClient.insertPublicTableRecord returned: isSuccess=${result.isSuccess}, statusCode=${result.statusCode}, errorMessage=${result.errorMessage}")
+        Log.d("HAKOT_SUBMIT_REPOSITORY", "Calling SupabaseClient.submitOrganizationApplicationEdgeFunction")
+        val result = SupabaseClient.submitOrganizationApplicationEdgeFunction(payload)
+        Log.d("HAKOT_SUBMIT_REPOSITORY", "Edge Function returned: isSuccess=${result.isSuccess}, statusCode=${result.statusCode}, errorMessage=${result.errorMessage}")
         return if (result.isSuccess) {
-            Pair(true, "Account application submitted successfully! Pending System Owner review.")
+            Pair(true, "Organization account request submitted successfully! Pending System Owner review.")
         } else {
-            Log.e("HAKOT_APPLICATION_SUBMISSION", "Failed to submit account application. Status code: ${result.statusCode}, Error: ${result.errorMessage}")
-            // Return safe user-facing error message without exposing raw backend details
-            Pair(false, "Unable to submit your application at this time. Please check your connection and try again.")
+            Log.e("HAKOT_APPLICATION_SUBMISSION", "Failed to submit organization application. Status code: ${result.statusCode}, Error: ${result.errorMessage}")
+            Pair(false, result.errorMessage ?: "Unable to submit your application at this time. Please check your connection and try again.")
+        }
+    }
+
+    data class UncertainPasswordReset(
+        val otpId: String,
+        val resetRequestId: String,
+        val userId: String,
+        val email: String,
+        val createdAt: String
+    )
+
+    val uncertainPasswordResets = mutableStateListOf<UncertainPasswordReset>()
+
+    suspend fun fetchUncertainPasswordResets(): Pair<Boolean, String> {
+        if (!isAuthenticated || currentAdminRole != UserRole.SYSTEM_OWNER) {
+            return Pair(false, "Access Denied: Only verified System Owners can review password resets.")
+        }
+        val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
+
+        val res = SupabaseClient.fetchAuthenticatedTableRecords("account_otps?code_type=eq.PASSWORD_RESET&status=eq.UNCERTAIN&select=id,user_id,email,reset_request_id,created_at", token)
+        if (res.isSuccess && res.data != null) {
+            uncertainPasswordResets.clear()
+            val jsonArray = res.data
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                uncertainPasswordResets.add(
+                    UncertainPasswordReset(
+                        otpId = item.optString("id", ""),
+                        resetRequestId = item.optString("reset_request_id", ""),
+                        userId = item.optString("user_id", ""),
+                        email = item.optString("email", ""),
+                        createdAt = item.optString("created_at", "Recent")
+                    )
+                )
+            }
+            return Pair(true, "Fetched successfully")
+        } else {
+            return Pair(false, res.errorMessage ?: "Failed to fetch uncertain password resets.")
+        }
+    }
+
+    suspend fun reconcileUncertainPasswordReset(otpId: String, action: String): Pair<Boolean, String> {
+        if (!isAuthenticated || currentAdminRole != UserRole.SYSTEM_OWNER) {
+            return Pair(false, "Access Denied: Only verified System Owners can reconcile password resets.")
+        }
+        val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
+
+        val res = SupabaseClient.reconcileUncertainPasswordReset(otpId, action, token)
+        if (res.isSuccess) {
+            fetchUncertainPasswordResets()
+            return Pair(true, "Password reset reconciliation completed successfully.")
+        } else {
+            return Pair(false, res.errorMessage ?: "Reconciliation failed.")
+        }
+    }
+
+    suspend fun fetchAuditLogs(): Pair<Boolean, String> {
+        if (!isAuthenticated || currentAdminRole != UserRole.SYSTEM_OWNER) {
+            return Pair(false, "Access Denied: Only verified System Owners can view audit logs.")
+        }
+        val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
+
+        val res = SupabaseClient.fetchAuthenticatedTableRecords("audit_logs?select=*&order=created_at.desc&limit=50", token)
+        if (res.isSuccess && res.data != null) {
+            auditLogs.clear()
+            val jsonArray = res.data
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                val id = item.optString("id", "")
+                val actorId = item.optString("actor_id", "")
+                val action = item.optString("action", "")
+                val tableName = item.optString("table_name", "")
+                val recordId = item.optString("record_id", "")
+                val createdAt = item.optString("created_at", "")
+
+                val timestamp = if (createdAt.isNotBlank()) {
+                    try {
+                        Instant.parse(createdAt).toEpochMilli()
+                    } catch (_: Exception) {
+                        -1L
+                    }
+                } else {
+                    -1L
+                }
+
+                val actorDisplay = if (actorId.isNotBlank()) "Actor ID: ${actorId.takeLast(6)}" else "System Actor"
+
+                auditLogs.add(
+                    AuditLogEntry(
+                        id = id.ifBlank { "aud_$i" },
+                        actingUserEmail = actorDisplay,
+                        action = action,
+                        targetRecord = if (tableName.isNotBlank()) "$tableName ($recordId)" else recordId,
+                        timestampMillis = timestamp
+                    )
+                )
+            }
+            return Pair(true, "Audit logs fetched successfully.")
+        } else {
+            return Pair(false, res.errorMessage ?: "Failed to fetch audit logs from Supabase.")
         }
     }
 
@@ -922,7 +1004,14 @@ object HakotRepository {
 
         return if (result.isSuccess) {
             accountApplications.removeIf { it.applicationId == applicationId }
-            Pair(true, "Application updated to ${newStatus.name} successfully.")
+            val rootObj = result.data?.optJSONObject(0)
+            val activationCode = rootObj?.optString("activationCode")
+            val msg = if (!activationCode.isNullOrBlank()) {
+                "Application approved! Activation Code: $activationCode (Please deliver this code manually to the applicant's Gmail)."
+            } else {
+                "Application updated to ${newStatus.name} successfully."
+            }
+            Pair(true, msg)
         } else {
             Pair(false, "Failed to update application status: ${result.errorMessage ?: "Server-side processing error"}")
         }
@@ -1051,6 +1140,338 @@ object HakotRepository {
         }
     }
 
+    private fun parseGeometryToGeoPoints(geomObj: Any?): List<Pair<Double, Double>> {
+        val points = mutableListOf<Pair<Double, Double>>()
+        if (geomObj == null) return points
+        try {
+            val textStr = when (geomObj) {
+                is String -> geomObj.trim()
+                else -> geomObj.toString().trim()
+            }
+            if (textStr.isBlank() || textStr.equals("null", ignoreCase = true)) {
+                return points
+            }
+
+            val cleanStr = if (textStr.startsWith("\"") && textStr.endsWith("\"") && textStr.length >= 2) {
+                try {
+                    JSONTokener(textStr).nextValue() as? String ?: textStr
+                } catch (_: Exception) {
+                    textStr.removeSurrounding("\"")
+                }
+            } else {
+                textStr
+            }
+
+            val coordsArray = if (cleanStr.startsWith("{")) {
+                val json = JSONObject(cleanStr)
+                val geom = if (json.has("geometry")) json.optJSONObject("geometry") else json
+                geom?.optJSONArray("coordinates")
+            } else if (cleanStr.startsWith("LINESTRING", ignoreCase = true)) {
+                val content = cleanStr.substringAfter("(").substringBeforeLast(")")
+                val pairs = content.split(",")
+                val parsed = mutableListOf<Pair<Double, Double>>()
+                for (pair in pairs) {
+                    val parts = pair.trim().split(Regex("\\s+"))
+                    if (parts.size >= 2) {
+                        val lon = parts[0].toDoubleOrNull()
+                        val lat = parts[1].toDoubleOrNull()
+                        if (lon != null && lat != null && lon in -180.0..180.0 && lat in -90.0..90.0 && !(lon == 0.0 && lat == 0.0)) {
+                            parsed.add(Pair(lat, lon))
+                        }
+                    }
+                }
+                return parsed.distinctBy { it.first to it.second }
+            } else {
+                null
+            }
+
+            if (coordsArray != null) {
+                for (i in 0 until coordsArray.length()) {
+                    val pt = coordsArray.optJSONArray(i)
+                    if (pt != null && pt.length() >= 2) {
+                        val lon = pt.optDouble(0, Double.NaN)
+                        val lat = pt.optDouble(1, Double.NaN)
+                        if (!lon.isNaN() && !lat.isNaN() && lon in -180.0..180.0 && lat in -90.0..90.0 && !(lon == 0.0 && lat == 0.0)) {
+                            points.add(Pair(lat, lon))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("HAKOT_GEO", "Error parsing geometry: ${e.message}")
+        }
+
+        val deduped = mutableListOf<Pair<Double, Double>>()
+        for (pt in points) {
+            if (deduped.isEmpty() || deduped.last() != pt) {
+                deduped.add(pt)
+            }
+        }
+        return deduped
+    }
+
+    suspend fun fetchRouteGeometry(routeVersionId: String): List<Pair<Double, Double>> {
+        if (routeVersionId.isBlank() || !isAuthenticated) return emptyList()
+        val token = currentAccessToken ?: return emptyList()
+
+        val res = SupabaseClient.fetchRouteGeometryGeoJson(routeVersionId, token)
+        if (!res.isSuccess) {
+            Log.e("HAKOT_ROUTE", "Failed to fetch route geometry for version $routeVersionId: HTTP ${res.statusCode} - ${res.errorMessage}")
+            return emptyList()
+        }
+
+        val rawText = res.errorMessage?.trim() ?: return emptyList()
+        if (rawText.isBlank() || rawText.equals("null", ignoreCase = true)) {
+            return emptyList()
+        }
+
+        return parseGeometryToGeoPoints(rawText)
+    }
+
+    suspend fun fetchSchedules(): Pair<Boolean, String> {
+        if (!isAuthenticated) {
+            return Pair(false, "Access Denied: Authentication required.")
+        }
+        if (isSchedulesLoading) {
+            return Pair(true, "Already loading schedules.")
+        }
+        val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
+
+        isSchedulesLoading = true
+        schedulesLoadError = null
+
+        val res = SupabaseClient.fetchAuthenticatedTableRecords(
+            "schedules?select=id,collection_date,start_time,end_time,status,truck_id,route_version_id,route_versions(routes(name)),barangays(name),trucks(plate_number)",
+            token
+        )
+        isSchedulesLoading = false
+
+        if (res.isSuccess && res.data != null) {
+            val newList = mutableListOf<ScheduleItem>()
+            val jsonArray = res.data
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                val id = item.optString("id", "")
+                val collectionDateStr = item.optString("collection_date", "")
+                val startTimeStr = item.optString("start_time", "08:00:00")
+                val endTimeStr = item.optString("end_time", "")
+                val status = item.optString("status", "active")
+                val routeVersionId = item.optString("route_version_id", "")
+                val truckId = if (item.isNull("truck_id")) null else item.optString("truck_id", "").trim()
+
+                val date = try {
+                    LocalDate.parse(collectionDateStr)
+                } catch (_: Exception) {
+                    null
+                }
+                val collectionDay = date?.dayOfWeek?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: ""
+
+                val routeVersionsObj = item.optJSONObject("route_versions")
+                val routesObj = routeVersionsObj?.optJSONObject("routes")
+                val routeName = routesObj?.optString("name") ?: (if (date != null) "Collection on $date" else "Collection Schedule")
+
+                val barangaysObj = item.optJSONObject("barangays")
+                val barangayName = barangaysObj?.optString("name") ?: "Barangay Unavailable"
+
+                val trucksObj = item.optJSONObject("trucks")
+                val plateNum = trucksObj?.optString("plate_number", "")?.trim() ?: ""
+
+                val truckAssignedDisplay = when {
+                    truckId == null || truckId.isBlank() -> "Unassigned"
+                    plateNum.isNotBlank() -> plateNum
+                    else -> "Assignment unavailable"
+                }
+
+                val startTime = try {
+                    LocalTime.parse(startTimeStr.take(5))
+                } catch (_: Exception) {
+                    LocalTime.of(8, 0)
+                }
+                val endTime = try {
+                    if (endTimeStr.isNotBlank()) {
+                        LocalTime.parse(endTimeStr.take(5))
+                    } else {
+                        startTime.plusHours(3)
+                    }
+                } catch (_: Exception) {
+                    startTime.plusHours(3)
+                }
+
+                newList.add(
+                    ScheduleItem(
+                        id = id.ifBlank { "sch_$i" },
+                        barangay = barangayName.ifBlank { "Barangay Unavailable" },
+                        routeName = routeName.ifBlank { "Route Unavailable" },
+                        date = date,
+                        collectionDay = collectionDay,
+                        startTime = startTime,
+                        endTime = endTime,
+                        wasteCategory = WasteCategory.GENERAL_WASTE,
+                        truckAssigned = truckAssignedDisplay,
+                        status = status.replaceFirstChar { it.uppercase() },
+                        routeVersionId = routeVersionId
+                    )
+                )
+            }
+            schedules.clear()
+            schedules.addAll(newList)
+            return Pair(true, "Schedules fetched successfully.")
+        } else {
+            val err = res.errorMessage ?: "Failed to fetch schedules from Supabase."
+            schedulesLoadError = err
+            return Pair(false, err)
+        }
+    }
+
+    suspend fun fetchTrucks(): Pair<Boolean, String> {
+        if (!isAuthenticated) {
+            return Pair(false, "Access Denied: Authentication required.")
+        }
+        if (isTrucksLoading) {
+            return Pair(true, "Already loading trucks.")
+        }
+        val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
+
+        isTrucksLoading = true
+        trucksLoadError = null
+
+        val res = SupabaseClient.fetchAuthenticatedTableRecords("trucks?select=id,plate_number,model,capacity_tons,status,driver_profiles(assigned_truck_id,profiles(full_name))", token)
+        isTrucksLoading = false
+
+        if (res.isSuccess && res.data != null) {
+            val newList = mutableListOf<GarbageTruck>()
+            val jsonArray = res.data
+            var skippedCount = 0
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                val id = item.optString("id", "").trim()
+                val plateNumber = item.optString("plate_number", "").trim()
+
+                if (id.isBlank() || plateNumber.isBlank()) {
+                    skippedCount++
+                    continue
+                }
+
+                val model = if (item.has("model") && !item.isNull("model")) item.optString("model", "").trim() else ""
+                val capacityTons = item.optDouble("capacity_tons", 0.0)
+                val rawStatus = if (item.has("status") && !item.isNull("status")) item.optString("status", "").trim().lowercase() else ""
+                val statusStr = rawStatus.ifBlank { "unavailable" }
+
+                val driverProfilesArr = if (item.has("driver_profiles") && !item.isNull("driver_profiles")) {
+                    item.optJSONArray("driver_profiles")
+                } else null
+
+                val driverNameDisplay = if (driverProfilesArr != null) {
+                    if (driverProfilesArr.length() > 0) {
+                        val driverObj = driverProfilesArr.optJSONObject(0)
+                        val profilesObj = driverObj?.optJSONObject("profiles")
+                        val name = profilesObj?.optString("full_name", "")?.trim() ?: ""
+                        if (name.isNotBlank()) name else "Assignment unavailable"
+                    } else {
+                        "Unassigned"
+                    }
+                } else {
+                    val matchedDriver = drivers.find { it.assignedTruckId == id }
+                    when {
+                        matchedDriver != null -> matchedDriver.fullName.ifBlank { "Assignment unavailable" }
+                        else -> "Unassigned"
+                    }
+                }
+
+                newList.add(
+                    GarbageTruck(
+                        id = id,
+                        plateNumber = plateNumber,
+                        driverName = driverNameDisplay,
+                        assignedRoute = "",
+                        assignedBarangays = "",
+                        destinationDumpsite = "",
+                        latitude = 0.0,
+                        longitude = 0.0,
+                        status = TruckStatus.ACTIVE_ON_ROUTE,
+                        speedKmH = 0,
+                        lastGpsUpdate = "",
+                        isCollecting = false,
+                        isOnline = false,
+                        modelName = model,
+                        capacityTons = capacityTons,
+                        dbStatus = statusStr
+                    )
+                )
+            }
+            trucks.clear()
+            trucks.addAll(newList)
+            val msg = if (skippedCount > 0) "Trucks fetched successfully ($skippedCount invalid records skipped)." else "Trucks fetched successfully."
+            return Pair(true, msg)
+        } else {
+            val err = res.errorMessage ?: "Failed to fetch trucks from Supabase."
+            trucksLoadError = err
+            return Pair(false, err)
+        }
+    }
+
+    suspend fun fetchDrivers(): Pair<Boolean, String> {
+        if (!isAuthenticated) {
+            return Pair(false, "Access Denied: Authentication required.")
+        }
+        if (isDriversLoading) {
+            return Pair(true, "Already loading drivers.")
+        }
+        val token = currentAccessToken ?: return Pair(false, "Authentication token missing or expired.")
+
+        isDriversLoading = true
+        driversLoadError = null
+
+        val res = SupabaseClient.fetchAuthenticatedTableRecords("driver_profiles?select=id,profile_id,license_number,status,assigned_truck_id,profiles(full_name,email),trucks(plate_number,model)", token)
+        isDriversLoading = false
+
+        if (res.isSuccess && res.data != null) {
+            val newList = mutableListOf<DriverProfile>()
+            val jsonArray = res.data
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                val id = item.optString("id", "")
+                val profileId = item.optString("profile_id", "")
+                val licenseNumber = item.optString("license_number", "N/A")
+                val status = item.optString("status", "off_duty")
+                val assignedTruckId = if (item.isNull("assigned_truck_id")) null else item.optString("assigned_truck_id")
+
+                val profilesObj = item.optJSONObject("profiles")
+                val fullName = profilesObj?.optString("full_name") ?: "Unknown Driver"
+                val email = profilesObj?.optString("email") ?: "N/A"
+
+                val trucksObj = item.optJSONObject("trucks")
+                val plateNumber = trucksObj?.optString("plate_number") ?: ""
+
+                val assignedTruckDisplay = when {
+                    assignedTruckId == null -> "Unassigned"
+                    plateNumber.isNotBlank() -> plateNumber
+                    else -> "Assignment unavailable"
+                }
+
+                newList.add(
+                    DriverProfile(
+                        id = id,
+                        profileId = profileId,
+                        licenseNumber = licenseNumber,
+                        status = status,
+                        assignedTruckId = assignedTruckId,
+                        fullName = fullName,
+                        email = email,
+                        assignedTruckPlate = assignedTruckDisplay
+                    )
+                )
+            }
+            drivers.clear()
+            drivers.addAll(newList)
+            return Pair(true, "Drivers fetched successfully.")
+        } else {
+            val err = res.errorMessage ?: "Failed to fetch drivers from Supabase."
+            driversLoadError = err
+            return Pair(false, err)
+        }
+    }
+
     fun addSchedule(item: ScheduleItem) {
         schedules.add(item)
     }
@@ -1074,4 +1495,77 @@ object HakotRepository {
     fun removeRoute(id: String) {
         routes.removeIf { it.id == id }
     }
+
+    suspend fun activateAccount(email: String, code: String, newPassword: String): Pair<Boolean, String> {
+        if (email.isBlank() || code.isBlank() || newPassword.isBlank()) {
+            return Pair(false, "Email, activation code, and new password are required.")
+        }
+        if (newPassword.length < 6) {
+            return Pair(false, "Password must be at least 6 characters long.")
+        }
+
+        val res = SupabaseClient.activateAccountEdgeFunction(email, code, newPassword)
+        if (res.statusCode == -2) {
+            return Pair(false, "Network request timed out. The operation outcome is uncertain — please do not retry immediately.")
+        }
+        if (!res.isSuccess) {
+            return Pair(false, res.errorMessage ?: "Failed to activate account.")
+        }
+
+        val rootObj = res.data?.optJSONObject(0)
+        val message = rootObj?.optString("message") ?: "Account activated successfully."
+        return Pair(true, message)
+    }
+
+    suspend fun resetAccountPassword(email: String, code: String, newPassword: String): PasswordResetResult {
+        if (email.isBlank() || code.isBlank() || newPassword.isBlank()) {
+            return PasswordResetResult.Failed("Email, verification code, and new password are required.")
+        }
+        if (newPassword.length < 6) {
+            return PasswordResetResult.Failed("Password must be at least 6 characters long.")
+        }
+
+        val res = SupabaseClient.resetAccountPasswordEdgeFunction(email, code, newPassword)
+        if (res.statusCode == -2) {
+            return PasswordResetResult.Uncertain("Network request timed out. The operation outcome is uncertain — please do not retry immediately to avoid duplicate attempts.")
+        }
+        if (!res.isSuccess) {
+            return PasswordResetResult.Failed(res.errorMessage ?: "Failed to reset password.")
+        }
+
+        val rootObj = res.data?.optJSONObject(0)
+        if (rootObj == null || rootObj.optBoolean("success", false) != true) {
+            val err = rootObj?.optString("error", "Failed to reset password. Invalid server response.") ?: "Failed to reset password. Invalid server response."
+            return PasswordResetResult.Failed(err)
+        }
+
+        val warning = rootObj.optString("warning")
+        val message = rootObj.optString("message", "Password updated successfully.")
+
+        if (!warning.isNullOrBlank()) {
+            return PasswordResetResult.ReconciliationRequired(warning)
+        }
+        return PasswordResetResult.Success(message)
+    }
+
+    suspend fun validateInvitationToken(accessToken: String): Boolean {
+        val res = SupabaseClient.getCurrentUser(accessToken)
+        return res.isSuccess
+    }
+
+    suspend fun updatePasswordWithToken(accessToken: String, newPassword: String): Pair<Boolean, String> {
+        val res = SupabaseClient.updateUserPassword(newPassword, accessToken)
+        return if (res.isSuccess) {
+            Pair(true, "Password updated successfully.")
+        } else {
+            Pair(false, res.errorMessage ?: "Failed to update password.")
+        }
+    }
+}
+
+sealed class PasswordResetResult {
+    data class Success(val message: String) : PasswordResetResult()
+    data class ReconciliationRequired(val warning: String) : PasswordResetResult()
+    data class Failed(val error: String) : PasswordResetResult()
+    data class Uncertain(val message: String) : PasswordResetResult()
 }

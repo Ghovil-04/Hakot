@@ -105,15 +105,27 @@ fun DarkMapView(
 
     // Fetch Date-Specific OSRM Road-Snapped Route asynchronously when selectedMapDate changes
     LaunchedEffect(HakotRepository.selectedMapDate) {
+        if (HakotRepository.schedules.isEmpty() && !HakotRepository.isSchedulesLoading) {
+            HakotRepository.fetchSchedules()
+        }
         val selectedDate = HakotRepository.selectedMapDate
-        val scheduleForDate = HakotRepository.schedules.find { it.date == selectedDate }
+        val selectedDayName = selectedDate.dayOfWeek.name.lowercase()
 
-        if (scheduleForDate != null) {
-            val matchedRoute = HakotRepository.routes.find { it.routeName == scheduleForDate.routeName }
-                ?: HakotRepository.routes.firstOrNull()
+        val scheduleForDate = HakotRepository.schedules.find { sch ->
+            val schDayName = sch.collectionDay.trim().lowercase()
+            if (sch.date != null) {
+                sch.date == selectedDate
+            } else if (schDayName.isNotBlank()) {
+                schDayName == selectedDayName || schDayName.startsWith(selectedDayName)
+            } else {
+                false
+            }
+        }
 
-            if (matchedRoute != null && matchedRoute.geoPoints.isNotEmpty()) {
-                val points = OsrmRoutingHelper.fetchRoadRoute(matchedRoute.geoPoints)
+        if (scheduleForDate != null && scheduleForDate.routeVersionId.isNotBlank()) {
+            val rawGeoPoints = HakotRepository.fetchRouteGeometry(scheduleForDate.routeVersionId)
+            if (rawGeoPoints.isNotEmpty()) {
+                val points = OsrmRoutingHelper.fetchRoadRoute(rawGeoPoints)
                 fetchedRoutePoints = points
             } else {
                 fetchedRoutePoints = emptyList()

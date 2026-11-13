@@ -225,7 +225,10 @@ data class Dumptrack(
     val truckCode: String = "Hakot Truck #1",
     val assignedBarangays: String = "Spans Barangays Poblacion 1, 2 & 3",
     val status: TruckStatus = TruckStatus.ACTIVE_ON_ROUTE,
-    val lastGpsUpdate: String = "Live - 1 min ago"
+    val lastGpsUpdate: String = "Live - 1 min ago",
+    val modelName: String = "",
+    val capacityTons: Double = 0.0,
+    val dbStatus: String = "active"
 ) {
     val plateNumber: String get() = plateNum
     val assignedRoute: String get() = route
@@ -246,7 +249,10 @@ data class Dumptrack(
         speedKmH: Int = 22,
         lastGpsUpdate: String = "Live - 1 min ago",
         isCollecting: Boolean = true,
-        isOnline: Boolean = true
+        isOnline: Boolean = true,
+        modelName: String = "",
+        capacityTons: Double = 0.0,
+        dbStatus: String = "active"
     ) : this(
         plateNum = plateNumber,
         isCollecting = isCollecting,
@@ -261,7 +267,10 @@ data class Dumptrack(
         truckCode = truckCode,
         assignedBarangays = assignedBarangays,
         status = status,
-        lastGpsUpdate = lastGpsUpdate
+        lastGpsUpdate = lastGpsUpdate,
+        modelName = modelName,
+        capacityTons = capacityTons,
+        dbStatus = dbStatus
     )
 
     init {
@@ -322,13 +331,26 @@ data class ScheduleItem(
     val id: String,
     val barangay: String,
     val routeName: String,
-    val date: LocalDate,
+    val date: LocalDate? = null,
+    val collectionDay: String = "",
     val startTime: LocalTime,
     val endTime: LocalTime,
     val wasteCategory: WasteCategory,
     val truckAssigned: String,
     val status: String,
-    val barangayId: String = "brgy_041019001"
+    val barangayId: String = "brgy_041019001",
+    val routeVersionId: String = ""
+)
+
+data class DriverProfile(
+    val id: String,
+    val profileId: String,
+    val licenseNumber: String,
+    val status: String,
+    val assignedTruckId: String?,
+    val fullName: String,
+    val email: String,
+    val assignedTruckPlate: String = "Unassigned"
 )
 
 data class ReportMessage(

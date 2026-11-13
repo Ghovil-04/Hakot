@@ -1,0 +1,11 @@
+# Node.js dependencies
+node_modules/
+**/node_modules/
+
+# Android Studio generated files
+**/.idea/
+**/.gradle/
+**/build/
+
+# Supabase CLI temporary files
+**/supabase/.temp/

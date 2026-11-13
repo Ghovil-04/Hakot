@@ -27,17 +27,23 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.example.hakot.ui.theme.HazardousRed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +80,11 @@ fun ScheduleScreen(
 
     var selectedDate by remember { mutableStateOf(nowLocalDate) }
     var isMonthlyView by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        HakotRepository.fetchSchedules()
+    }
 
     // Update map selected date when schedule date changes
     LaunchedEffect(selectedDate) {
@@ -82,21 +93,27 @@ fun ScheduleScreen(
 
     val activeCurrentSchedule = remember(selectedDate, nowLocalTime) {
         if (selectedDate == nowLocalDate) {
+            val currentDayName = nowLocalDate.dayOfWeek.name.lowercase()
             HakotRepository.schedules.find { sch ->
-                sch.date == selectedDate && !nowLocalTime.isBefore(sch.startTime) && !nowLocalTime.isAfter(sch.endTime)
+                val schDayName = sch.collectionDay.trim().lowercase()
+                val isToday = if (sch.date != null) {
+                    sch.date == nowLocalDate
+                } else if (schDayName.isNotBlank()) {
+                    schDayName == currentDayName || schDayName.startsWith(currentDayName)
+                } else {
+                    false
+                }
+                isToday && !nowLocalTime.isBefore(sch.startTime) && !nowLocalTime.isAfter(sch.endTime)
             }
         } else null
     }
 
-    val schedulesForDate = remember(selectedDate, searchQuery) {
+    val filteredSchedules = remember(searchQuery, HakotRepository.schedules.size) {
         HakotRepository.schedules.filter { sch ->
-            val matchesDate = sch.date == selectedDate
-            val matchesSearch = searchQuery.isEmpty() ||
+            searchQuery.isEmpty() ||
                 sch.barangay.contains(searchQuery, ignoreCase = true) ||
                 sch.routeName.contains(searchQuery, ignoreCase = true) ||
                 sch.wasteCategory.displayName.contains(searchQuery, ignoreCase = true)
-
-            matchesDate && matchesSearch
         }
     }
 
@@ -137,33 +154,61 @@ fun ScheduleScreen(
                 )
             }
 
-            // Real System Date Badge
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(DarkSurfaceCard)
-                    .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            // Real System Date Badge & Refresh
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DarkSurfaceCard)
+                        .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AccessTime,
+                            contentDescription = "Clock",
+                            tint = EcoGreenLight,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = nowLocalTime.format(DateTimeFormatter.ofPattern("hh:mm a")),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextOnDarkPrimary
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            HakotRepository.fetchSchedules()
+                        }
+                    }
+                ) {
                     Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = "Clock",
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh Schedules",
                         tint = EcoGreenLight,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = nowLocalTime.format(DateTimeFormatter.ofPattern("hh:mm a")),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextOnDarkPrimary
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        HakotRepository.schedulesLoadError?.let { err ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().border(1.dp, HazardousRed, RoundedCornerShape(10.dp))
+            ) {
+                Text("Server Data Unavailable: $err", color = HazardousRed, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         // Working Time Status Banner
         if (activeCurrentSchedule != null) {
@@ -315,8 +360,28 @@ fun ScheduleScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        HakotRepository.schedulesLoadError?.let { err ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().border(1.dp, HazardousRed, RoundedCornerShape(10.dp))
+            ) {
+                Text("Server Data Unavailable: $err", color = HazardousRed, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // Schedule List for Selected Date
-        if (schedulesForDate.isEmpty()) {
+        if (HakotRepository.isSchedulesLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = EcoGreenPrimary)
+            }
+        } else if (filteredSchedules.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -332,7 +397,7 @@ fun ScheduleScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "No collection scheduled for this date",
+                        text = "No collection schedules found",
                         fontSize = 14.sp,
                         color = TextOnDarkSecondary
                     )
@@ -349,7 +414,7 @@ fun ScheduleScreen(
                 contentPadding = PaddingValues(bottom = 20.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                items(schedulesForDate) { sch ->
+                items(filteredSchedules) { sch ->
                     ScheduleCardItem(schedule = sch)
                 }
             }
@@ -416,6 +481,12 @@ fun ScheduleCardItem(schedule: ScheduleItem) {
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextOnDarkPrimary
+            )
+            Text(
+                text = "🗓️ Day: ${schedule.collectionDay}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = EcoGreenLight
             )
             Text(
                 text = "📍 ${schedule.barangay}",

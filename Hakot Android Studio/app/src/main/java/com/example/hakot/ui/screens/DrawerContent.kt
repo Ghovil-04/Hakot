@@ -2,7 +2,6 @@ package com.example.hakot.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,19 +25,13 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,14 +43,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hakot.ui.theme.DarkBorder
 import com.example.hakot.ui.theme.DarkSurface
 import com.example.hakot.ui.theme.EcoGreenContainer
 import com.example.hakot.ui.theme.EcoGreenPrimary
-import com.example.hakot.ui.theme.HazardousRed
 import com.example.hakot.ui.theme.TextOnDarkMuted
 import com.example.hakot.ui.theme.TextOnDarkPrimary
 import com.example.hakot.ui.theme.TextOnDarkSecondary
@@ -68,7 +59,6 @@ fun HakotDrawerContent(
     onToggleAdminMode: (Boolean) -> Unit,
     onCloseDrawer: () -> Unit
 ) {
-    var showPinDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(true) }
 
@@ -210,81 +200,6 @@ fun HakotDrawerContent(
             )
         }
     }
-
-    // Secure PIN Dialog
-    if (showPinDialog) {
-        AdminPinDialog(
-            onDismiss = { showPinDialog = false },
-            onSuccess = {
-                showPinDialog = false
-                onToggleAdminMode(true)
-                onCloseDrawer()
-            }
-        )
-    }
-}
-
-@Composable
-fun AdminPinDialog(
-    onDismiss: () -> Unit,
-    onSuccess: () -> Unit
-) {
-    var pinInput by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = DarkSurface,
-        title = {
-            Text("Admin Access PIN Required", color = TextOnDarkPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        },
-        text = {
-            Column {
-                Text("Enter 4-digit administrative PIN code (Hint: 1234):", color = TextOnDarkSecondary, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = pinInput,
-                    onValueChange = {
-                        if (it.length <= 4) pinInput = it
-                        errorMessage = null
-                    },
-                    singleLine = true,
-                    placeholder = { Text("••••", color = TextOnDarkMuted) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = EcoGreenPrimary,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedTextColor = TextOnDarkPrimary,
-                        unfocusedTextColor = TextOnDarkPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                errorMessage?.let {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(it, color = HazardousRed, fontSize = 11.sp)
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (pinInput == "1234" || pinInput == "8888") {
-                        onSuccess()
-                    } else {
-                        errorMessage = "Incorrect PIN code (Hint: 1234)"
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = EcoGreenPrimary)
-            ) {
-                Text("Unlock Admin", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = TextOnDarkSecondary)
-            }
-        }
-    )
 }
 
 @Composable

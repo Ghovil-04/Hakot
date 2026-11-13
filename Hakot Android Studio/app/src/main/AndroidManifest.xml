@@ -36,7 +36,18 @@
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.Hakot"
-            android:windowSoftInputMode="adjustResize" />
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="hakot"
+                    android:host="auth"
+                    android:pathPrefix="/invite-callback" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
